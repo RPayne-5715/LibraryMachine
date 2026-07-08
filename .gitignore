@@ -23,7 +23,10 @@ Thumbs.db
 # Logs
 *.log
 
+# Vendor
+vendor/
+
+# txt files
 .buildozer/android/app/cookies.txt
-.buildozer/android/app/backend.txt
-.buildozer/android/app/librarymachine.txt
-.buildozer/android/app/ui.txt
+.buildozer/android/app/main.txt
+

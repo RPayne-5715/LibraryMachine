@@ -3,8 +3,12 @@ import yt_dlp
 from urllib.parse import urlparse, parse_qs
 import csv
 import re
-from tqdm import tqdm
 from mutagen.oggopus import OggOpus
+
+import sys
+
+sys.path.insert(0, str(Path(__file__).parent / "vendor"))
+
 from pytubefix import Playlist
 
 LAYER_NAMES = {
@@ -206,7 +210,8 @@ class LibraryMachine:
                         )
         finally:
             self.progress(0, 1)
-            return analysis_data, missing_entries
+            
+        return analysis_data, missing_entries
 
     def append_to_csv(self, rows):
 

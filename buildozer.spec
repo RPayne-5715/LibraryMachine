@@ -6,7 +6,7 @@
 [app]
 
 # (str) Title of your application
-title = Kivy Test PyTubeFix
+title = LibraryMachine
 
 # (str) Package name
 package.name = librarymachine
@@ -18,23 +18,23 @@ package.domain = com.rp5715.librarymachine
 source.dir = .
 
 # (list) Source files to include (leave empty to include all the files)
-source.include_exts = py,kv,txt,csv,png,jpg,atlas
+source.include_exts = py,kv,txt,csv,png,ttf
 
 # (list) List of inclusions using pattern matching
 source.include_patterns = assets/*
 
 # (list) Source files to exclude (leave empty to not exclude anything)
-#source.exclude_exts = spec
+#source.exclude_exts = spec,gitignore
 
 # (list) List of directory to exclude (leave empty to not exclude anything)
-#source.exclude_dirs = tests, bin, venv
+#source.exclude_dirs = tests, bin, venv, git
 
 # (list) List of exclusions using pattern matching
 # Do not prefix with './'
 source.exclude_patterns = .vscode/*
 
 # (str) Application versioning (method 1)
-version = 0.1
+version = 0.5
 
 # (str) Application versioning (method 2)
 # version.regex = __version__ = ['"](.*)['"]
@@ -49,10 +49,10 @@ requirements = python3,kivy,yt-dlp,mutagen,nodejs-wheel-binaries
 # requirements.source.kivy = ../../kivy
 
 # (str) Presplash of the application
-#presplash.filename = %(source.dir)s/data/presplash.png
+presplash.filename = assets/presplash.png
 
 # (str) Icon of the application
-#icon.filename = %(source.dir)s/data/icon.png
+#icon.filename = assets/icon.png
 
 # (list) Supported orientations
 # Valid options are: landscape, portrait, portrait-reverse, landscape-reverse, or all
@@ -89,7 +89,7 @@ fullscreen = 0
 # red, blue, green, black, white, gray, cyan, magenta, yellow, lightgray,
 # darkgray, grey, lightgrey, darkgrey, aqua, fuchsia, lime, maroon, navy,
 # olive, purple, silver, teal.
-#android.presplash_color = #FFFFFF
+#android.presplash_color = #1C1C1C
 
 # (string) Presplash animation using Lottie format.
 # see https://lottiefiles.com/ for examples and https://airbnb.design/lottie/
@@ -98,12 +98,12 @@ fullscreen = 0
 #android.presplash_lottie = "path/to/lottie/file.json"
 
 # (str) Adaptive icon of the application (used if Android API level is 26+ at runtime)
-#icon.adaptive_foreground.filename = %(source.dir)s/data/icon_fg.png
-#icon.adaptive_background.filename = %(source.dir)s/data/icon_bg.png
+icon.adaptive_foreground.filename = assets/icon-fg.png
+icon.adaptive_background.filename = assets/icon-bg.png
 
 # (list) Permissions
 # (See https://python-for-android.readthedocs.io/en/latest/buildoptions.html for all the supported syntaxes and properties)
-#android.permissions = android.permission.INTERNET, (name=android.permission.WRITE_EXTERNAL_STORAGE;maxSdkVersion=18)
+android.permissions = android.permission.INTERNET
 
 # (list) features (adds uses-feature -tags to manifest)
 #android.features = android.hardware.usb.host
@@ -436,7 +436,7 @@ ios.codesign.allowed = false
 log_level = 2
 
 # (int) Display warning if buildozer is run as root (0 = False, 1 = True)
-warn_on_root = 1
+warn_on_root = 0
 
 # (str) Path to build artifact storage, absolute or relative to spec file
 # build_dir = ./.buildozer
