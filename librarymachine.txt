@@ -1,0 +1,351 @@
+#:kivy 2.3.0
+#:import StencilPush kivy.graphics.StencilPush
+#:import StencilUse kivy.graphics.StencilUse
+#:import StencilUnUse kivy.graphics.StencilUnUse
+#:import StencilPop kivy.graphics.StencilPop
+
+<GnButton@Button>:
+    background_normal: ""
+    background_down: ""
+    background_color: 0, 0, 0, 0
+    color: 0xC6/255, 0xC6/255, 0xC6/255, 1
+    font_name: "Jua"
+    font_size: "18sp"
+
+    canvas.before:
+        Color: 
+            rgb: (0x3F/255, 0x51/255, 0x4A/255) if self.state == "down" else (0x31/255, 0x3D/255, 0x38/255)
+
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(15)]
+<TButton@Button>:
+    background_normal: ""
+    background_down: ""
+    background_color: 0, 0, 0, 0
+    color: 0xC6/255, 0xC6/255, 0xC6/255, 1
+    font_name: "Jua"
+    font_size: "20sp"
+
+    canvas.before:
+        Color: 
+            rgb: (0x40/255, 0x55/255, 0x58/255) if self.state == "down" else (0x30/255, 0x3D/255, 0x3F/255)
+
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(15)]
+<BButton@Button>:
+    background_normal: ""
+    background_down: ""
+    background_color: 0, 0, 0, 0
+    color: 0xC6/255, 0xC6/255, 0xC6/255, 1
+    font_name: "Jua"
+
+    canvas.before:
+        Color: 
+            rgb: 
+                (0x3D/255, 0x4E/255, 0x61/255) if self.state == "down" else (0x2D/255, 0x3A/255, 0x47/255) 
+
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(15)]
+<PButton@Button>:
+    background_normal: ""
+    background_down: ""
+    background_color: 0, 0, 0, 0
+    color: 0xC6/255, 0xC6/255, 0xC6/255, 1
+    font_name: "Jua"
+
+    canvas.before:
+        Color: 
+            rgb: (0x4D/255, 0x52/255, 0x6E/255) if self.state == "down" else (0x38/255, 0x3B/255, 0x50/255)
+
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(15)]
+<GButton@Button>:
+    background_normal: ""
+    background_down: ""
+    background_color: 0, 0, 0, 0
+    color: 0xC6/255, 0xC6/255, 0xC6/255, 1
+    font_name: "Jua"
+    font_size: "24sp"
+
+    canvas.before:
+        Color: 
+            rgb: (0x6E/255, 0x6E/255, 0x6E/255) if self.state == "down" else (0x52/255, 0x52/255, 0x52/255)
+
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(15)]
+
+
+<SplashScreen>:
+
+    FloatLayout:
+        canvas.before:
+
+            Color:
+                rgb: 0x1C/255, 0x1C/255, 0x1C/255
+
+            Rectangle:
+                pos: self.pos
+                size: self.size
+
+        AnchorLayout:
+            padding: "10dp"
+
+            Image:
+                source: "assets/bkg.png"
+                fit_mode: "fill"
+
+        Image:
+            source: "assets/logo.png"
+
+            size_hint: .55, .55
+
+            pos_hint:
+                {"center_x": .5,
+                "center_y": .5}
+<MainScreen>:
+
+    BoxLayout:
+
+        canvas.before:
+            Color:
+                rgb: 0x30/255, 0x30/255, 0x30/255
+            Rectangle:
+                pos: self.pos
+                size: self.size
+        orientation: "vertical"
+        padding: "18dp"
+        spacing: "9dp"
+
+        BoxLayout:
+            size_hint_y: None
+            height: "35dp"
+            spacing: "8dp"
+
+            GnButton:
+                text: "Folder"
+                on_release: app.folder_pressed()
+
+            GnButton:
+                text: "Player"
+                on_release: app.player_pressed()
+
+            GnButton:
+                text: "CSV"
+                on_release: app.csv_pressed()
+        BoxLayout:
+            size_hint_y: None
+            height: "41dp"
+            spacing: "8dp"
+
+            TButton:
+                text: "Sync CSV"
+                on_release: app.sync_csv_pressed()
+
+            TButton:
+                text: "Sync YT"
+                on_release: app.sync_yt_pressed()
+        Widget:
+            size_hint_y: None
+            height: "1.5dp"
+
+            canvas:
+                Color:
+                    rgb: 1, 1, 1
+
+                Rectangle:
+                    pos: self.x, self.center_y - dp(0.75)
+                    size: self.width, dp(1)
+        BoxLayout:
+            size_hint_y: None
+            height: "26dp"
+
+            BButton:
+                text: "Custom Playlist"
+                on_release: app.playlist_pressed(5)
+
+        BoxLayout:
+            size_hint_y: None
+            height: "26dp"
+            spacing: "7dp"
+
+            PButton:
+                text: "Dollop"
+                on_release: app.playlist_pressed(1)
+
+            PButton:
+                text: "Peer"
+                on_release: app.playlist_pressed(2)
+
+            PButton:
+                text: "PeerJ"
+                on_release: app.playlist_pressed(3)
+
+            PButton:
+                text: "Dakota"
+                on_release: app.playlist_pressed(4)
+
+        BoxLayout:
+            orientation: "vertical"
+            canvas.before:
+                Color:
+                    rgb: 0x1C/255, 0x1C/255, 0x1C/255
+
+                RoundedRectangle:
+                    pos: self.pos
+                    size: self.size
+                    radius: [dp(3)]
+            BoxLayout:
+                size_hint_y: None
+                height: "18dp"
+                padding: "6dp", "4dp"
+                ProgressBarWidget:
+                    id: progress
+
+                    size_hint: 1, None
+                    height: "8dp"
+
+                    canvas.before:
+                        Color:
+                            rgb: 0x27/255, 0x27/255, 0x27/255
+
+                        RoundedRectangle:
+                            pos: progress.pos
+                            size: progress.size
+                            radius: [dp(3)]
+
+                        # Filled portion
+                        StencilPush
+
+                        RoundedRectangle:
+                            pos: progress.pos
+                            size: progress.fill_width, progress.height
+                            radius: [dp(3)]
+
+                        StencilUse
+
+                        Color:
+                            rgba: (1, 1, 1, 1) if progress.show_fill else (1, 1, 1, 0)
+
+                        Rectangle:
+                            texture: app.gradient
+                            tex_coords:
+                                (0, 0,
+                                1, 0,
+                                1, 1,
+                                0, 1)
+
+                            pos: progress.pos
+                            size: progress.size
+
+                        StencilUnUse
+
+                        RoundedRectangle:
+                            pos: progress.pos
+                            size: progress.fill_width, progress.height
+                            radius: [dp(3)]
+
+                        StencilPop
+                Label:
+                    id: progress_label
+                    size_hint_x: None
+                    width: self.texture_size[0]
+                    padding: "5dp", "0dp", "0dp", "0dp"
+                    pos_hint: {"right": .995, "top": .995}
+                    halign: "center"
+                    font_name: "Jua"
+                    font_size: "9sp"
+                    text: root.progress_text
+            ScrollView:
+                id: console_scroll
+                do_scroll_x: False
+                TextInput:
+                    id: console
+
+                    readonly: True
+                    multiline: True
+
+                    font_name: "Console"
+                    font_size: "15sp"
+
+                    text: ""
+
+                    size_hint_y: None
+                    height: max(self.minimum_height, self.line_height)
+
+                    width: self.parent.width
+
+                    background_color: 0, 0, 0, 0
+                    foreground_color: 1, 1, 1, 1
+
+                    cursor_width: 0
+                    cursor_blink: False
+
+                    use_bubble: True
+                    use_handles: True
+        Widget:
+            size_hint_y: None
+            height: "1.5dp"
+
+            canvas:
+                Color:
+                    rgb: 1, 1, 1
+
+                Rectangle:
+                    pos: self.x, self.center_y - dp(0.75)
+                    size: self.width, dp(1)
+        FloatLayout:
+            size_hint_y: None
+            height: "51dp"
+
+            BoxLayout:
+                id: paste_buttons
+                pos_hint: {"x": 0, "y": 0}
+
+                GButton:
+                    text: "Paste"
+            BoxLayout:
+                id: yesno_buttons
+                spacing: "8dp"
+                pos_hint: {"x": 0, "y": 0}
+
+                GButton:
+                    text: "Y"
+                    on_release: app.yes_pressed()
+                GButton:
+                    text: "N"
+                    on_release: app.no_pressed()
+
+            BoxLayout:
+                id: continue_buttons
+                pos_hint: {"x": 0, "y": 0}
+
+                GButton:
+                    text: "Continue"
+                    on_release: app.continue_pressed()
+            BoxLayout:
+                id: idle_buttons
+                pos_hint: {"x": 0, "y": 0}
+
+                GButton:
+                    text: ""
+                    on_release: app.machine.log(":3")
+
+            
+
+Root:
+    SplashScreen:
+        name: "splash"
+
+    MainScreen:
+        name: "main"
+

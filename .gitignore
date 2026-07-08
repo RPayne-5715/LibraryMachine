@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments
+.venv/
+venv/
+
+# Buildozer
+.buildozer/
+bin/
+
+# VS Code
+.vscode/
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+
+# Logs
+*.log
+
+.buildozer/android/app/cookies.txt
+.buildozer/android/app/backend.txt
+.buildozer/android/app/librarymachine.txt
+.buildozer/android/app/ui.txt
