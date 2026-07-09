@@ -34,7 +34,7 @@ source.include_patterns = assets/*
 source.exclude_patterns = .vscode/*
 
 # (str) Application versioning (method 1)
-version = 0.5
+version = 0.9
 
 # (str) Application versioning (method 2)
 # version.regex = __version__ = ['"](.*)['"]
