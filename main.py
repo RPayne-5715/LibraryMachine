@@ -1,16 +1,26 @@
 from kivy.app import App
-from kivy.lang import Builder
-from kivy.core.window import Window
-from kivy.core.text import LabelBase
-from kivy.core.image import Image as CoreImage
-from kivy.properties import NumericProperty
-from kivy.uix.widget import Widget
-from kivy.uix.label import Label
-from kivy.uix.screenmanager import ScreenManager, FadeTransition, Screen
 from kivy.animation import Animation
 from kivy.clock import Clock
+from kivy.core.image import Image as CoreImage
+from kivy.core.text import LabelBase
+from kivy.core.window import Window
+from kivy.lang import Builder
 from kivy.properties import NumericProperty, StringProperty, BooleanProperty
+from kivy.storage.jsonstore import JsonStore
+from kivy.uix.label import Label
+from kivy.uix.screenmanager import ScreenManager, FadeTransition, Screen
+from kivy.uix.widget import Widget
 from kivy.utils import platform
+
+
+if platform == "android":
+    from android import activity
+    from jnius import autoclass
+
+    Intent = autoclass("android.content.Intent")
+    PythonActivity = autoclass("org.kivy.android.PythonActivity")
+else:
+    Window.size = (412, 915)
 
 from pathlib import Path
 from datetime import datetime
@@ -23,8 +33,7 @@ gradient.wrap = "clamp_to_edge"
 gradient.mag_filter = "linear"
 gradient.min_filter = "linear"
 current_label = None
-CONSOLE_PADDING = 20
-
+CONSOLE_PADDING = 19
 Window.clearcolor = (
     0x1C / 255,
     0x1C / 255,
@@ -32,8 +41,6 @@ Window.clearcolor = (
     1,
 )
 
-if platform != "android":
-    Window.size = (412, 915)
 
 LabelBase.register(
     name="Console",
@@ -98,19 +105,94 @@ class LibraryMachineApp(App):
         self.pending_action = None
         self.current_playlist_url = None
 
+        self.store = JsonStore(
+            str(
+                Path(self.user_data_dir) / "settings.json"
+            )
+        )
+
         return None
 
-    def on_start(self):
+    def create_machine(self, library_path):
+
         self.machine = LibraryMachine(
-            library_path=Path(App.get_running_app().user_data_dir) / "PlaylistLibrary",
+            library_path=library_path,
             log_callback=log,
             progress_callback=self.update_progress,
         )
+
+    def pick_library_folder(self):
+
+        intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+
+        PythonActivity.mActivity.startActivityForResult(
+            intent,
+            1001,
+        )
+
+    def activity_result(
+        self,
+        request_code,
+        result_code,
+        intent,
+    ):
+
+        if request_code != 1001:
+            return
+
+        if intent is None:
+            return
+
+        uri = intent.getData()
+
+        print(uri.toString())
+
+        flags = (
+            Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+        )
+
+        PythonActivity.mActivity.getContentResolver().takePersistableUriPermission(
+            uri,
+            flags,
+        )
+
+        self.store.put(
+            "library",
+            uri=uri.toString(),
+        )
+
+        self.create_machine(Path(App.get_running_app().user_data_dir) / "PlaylistLibrary")
+
+    def on_start(self):
+        if platform == "android":
+
+            if self.store.exists("library"):
+
+                uri = self.store.get("library")["uri"]
+
+                print(f"Saved URI: {uri}")
+
+                self.create_machine(
+                    Path(App.get_running_app().user_data_dir) / "PlaylistLibrary"
+                )
+
+            else:
+
+                self.pick_library_folder()
+
+        else:
+
+            self.create_machine(
+                Path(App.get_running_app().user_data_dir) / "PlaylistLibrary"
+            )
 
         Clock.schedule_once(
             self.finish_loading,
             3,
         )
+
+        if platform == "android":
+            activity.bind(on_activity_result=self.activity_result)
 
     def on_pause(self):
         return True
@@ -264,13 +346,79 @@ class LibraryMachineApp(App):
     #
 
     def folder_pressed(self):
-        log("Not Yet Implemented")
+
+        if platform != "android":
+            log("Android only.")
+            return
+
+        Intent = autoclass("android.content.Intent")
+        Uri = autoclass("android.net.Uri")
+        File = autoclass("java.io.File")
+
+        activity = PythonActivity.mActivity
+
+        folder = str(Path(App.get_running_app().user_data_dir))
+
+        intent = Intent(Intent.ACTION_VIEW)
+
+        uri = Uri.fromFile(File(folder))
+
+        intent.setDataAndType(uri, "*/*")
+
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+        activity.startActivity(intent)
 
     def player_pressed(self):
-        log("Not Yet Implemented")
+
+        if platform != "android":
+            log("Android only.")
+            return
+
+        Intent = autoclass("android.content.Intent")
+        ComponentName = autoclass("android.content.ComponentName")
+
+        activity = PythonActivity.mActivity
+
+        intent = Intent()
+
+        intent.setComponent(
+            ComponentName(
+                "com.maxmpz.audioplayer",
+                "com.maxmpz.audioplayer.MainActivity",
+            )
+        )
+
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+        if intent:
+            activity.startActivity(intent)
+        else:
+            log("Poweramp is not installed.")
 
     def csv_pressed(self):
-        log("Not Yet Implemented")  
+
+        if platform != "android":
+            log("Android only.")
+            return
+
+        Intent = autoclass("android.content.Intent")
+        Uri = autoclass("android.net.Uri")
+        File = autoclass("java.io.File")
+
+        activity = PythonActivity.mActivity
+
+        csv = str(Path(App.get_running_app().user_data_dir) / "music_database.csv")
+
+        intent = Intent(Intent.ACTION_VIEW)
+
+        uri = Uri.fromFile(File(csv))
+
+        intent.setDataAndType(uri, "text/*")
+
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+        activity.startActivity(intent)
 
     def sync_csv_pressed(self):
         if self.machine.needs_download_before_sync():
@@ -299,7 +447,7 @@ class LibraryMachineApp(App):
         if playlist == 5:
 
             log(self.hr)
-            log("Paste yout custom YouTube URL.")
+            log("Paste your custom YouTube URL.")
 
             self.current_playlist_url = None
             self.set_button_state("paste")
@@ -406,6 +554,7 @@ class LibraryMachineApp(App):
             self.pending_action = "csv_finish"
 
             self.set_button_state("continue")
+
 
 if __name__ == "__main__":
     LibraryMachineApp().run()
