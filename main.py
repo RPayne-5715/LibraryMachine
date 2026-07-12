@@ -26,7 +26,7 @@ from pathlib import Path
 from datetime import datetime
 from threading import Thread
 
-from backend import LibraryMachine, PLAYLIST_URLS
+from backend import LibraryMachine, PathStorage, PLAYLIST_URLS
 
 gradient = CoreImage("assets/progress_gradient.png").texture
 gradient.wrap = "clamp_to_edge"
@@ -94,10 +94,8 @@ class ProgressBarWidget(Widget):
     def on_size(self, *_):
         self.fill_width = self.width * self.progress_amt
 
-
 class LibraryMachineApp(App):
     gradient = gradient
-    hr = "==========================="
 
     def build(self):
         self.machine = None
@@ -161,7 +159,11 @@ class LibraryMachineApp(App):
             uri=uri.toString(),
         )
 
-        self.create_machine(Path(App.get_running_app().user_data_dir) / "PlaylistLibrary")
+        self.create_machine(
+            PathStorage(
+                Path(App.get_running_app().user_data_dir) / "PlaylistLibrary"
+            )
+        )
 
     def on_start(self):
         if platform == "android":
@@ -173,7 +175,9 @@ class LibraryMachineApp(App):
                 print(f"Saved URI: {uri}")
 
                 self.create_machine(
-                    Path(App.get_running_app().user_data_dir) / "PlaylistLibrary"
+                    PathStorage(
+                        Path(App.get_running_app().user_data_dir) / "PlaylistLibrary"
+                    )
                 )
 
             else:
@@ -182,8 +186,10 @@ class LibraryMachineApp(App):
 
         else:
 
+            library_folder = Path(__file__).resolve().parent.parent
+
             self.create_machine(
-                Path(App.get_running_app().user_data_dir) / "PlaylistLibrary"
+                PathStorage(library_folder)
             )
 
         Clock.schedule_once(
@@ -221,7 +227,6 @@ class LibraryMachineApp(App):
                 "\n" * CONSOLE_PADDING
             )
             self.machine.log("~ Library Machine ~")
-            self. machine.log("")
 
         anim.bind(on_complete=switch)
         anim.start(splash)
@@ -243,8 +248,7 @@ class LibraryMachineApp(App):
             encoding="utf-8",
         )
 
-        log("")
-        log(f"Saved log to {filename}")
+        self.machine.log(f"Saved log to {filename}")
 
         return path
 
@@ -296,7 +300,7 @@ class LibraryMachineApp(App):
             self.set_button_state("idle")
 
             Thread(
-                target=lambda: self.machine.csv_sync(True),
+                target=lambda: self.machine.csv_sync(True, False,),
                 daemon=True,
             ).start()
 
@@ -309,7 +313,7 @@ class LibraryMachineApp(App):
             self.set_button_state("idle")
 
             Thread(
-                target=lambda: self.machine.csv_sync(False),
+                target=lambda: self.machine.csv_sync(False, False,),
                 daemon=True,
             ).start()
 
@@ -319,8 +323,7 @@ class LibraryMachineApp(App):
 
         if self.pending_action == "retry_playlist":
 
-            log("")
-            log("Analyzing playlist...")
+            self.machine.log("Analyzing playlist...")
 
             self.set_button_state("idle")
 
@@ -331,8 +334,7 @@ class LibraryMachineApp(App):
 
         elif self.pending_action == "csv_finish":
 
-            log("")
-            log("Downloading songs...")
+            self.major("Downloading songs...")
 
             self.set_button_state("idle")
 
@@ -348,7 +350,7 @@ class LibraryMachineApp(App):
     def folder_pressed(self):
 
         if platform != "android":
-            log("Android only.")
+            self.machine.major("Android only.")
             return
 
         Intent = autoclass("android.content.Intent")
@@ -372,7 +374,7 @@ class LibraryMachineApp(App):
     def player_pressed(self):
 
         if platform != "android":
-            log("Android only.")
+            self.machine.major("Android only.")
             return
 
         Intent = autoclass("android.content.Intent")
@@ -399,7 +401,8 @@ class LibraryMachineApp(App):
     def csv_pressed(self):
 
         if platform != "android":
-            log("Android only.")
+            self.machine.major("Android only.")
+
             return
 
         Intent = autoclass("android.content.Intent")
@@ -421,33 +424,24 @@ class LibraryMachineApp(App):
         activity.startActivity(intent)
 
     def sync_csv_pressed(self):
-        if self.machine.needs_download_before_sync():
 
-            log("")
-            log("Undownloaded songs detected.")
-            log("Download before synchronizing? (Y/N)")
+        self.machine.major()
 
-            self.pending_action = "sync_download"
-            self.set_button_state("yesno")
+        self.set_button_state("idle")
 
-        else:
-
-            self.set_button_state("idle")
-
-            Thread(
-                target=lambda: self.machine.csv_sync(False),
-                daemon=True,
-            ).start()
+        Thread(
+            target=self.sync_csv_thread,
+            daemon=True,
+        ).start()
 
     def sync_yt_pressed(self):
-        log("Not Yet Implemented")
+        self.machine.major("Not Yet Implemented")
 
     def playlist_pressed(self, playlist):
 
         if playlist == 5:
 
-            log(self.hr)
-            log("Paste your custom YouTube URL.")
+            self.machine.major("Paste your custom YouTube URL.")
 
             self.current_playlist_url = None
             self.set_button_state("paste")
@@ -462,11 +456,8 @@ class LibraryMachineApp(App):
             4: "For Dakota ig",
         }
 
-        log(self.hr)
-        log("")
-        log(f"{names[playlist]} selected.")
-        log("")
-        log("Analyzing playlist...")
+        self.machine.major(f"{names[playlist]} selected.")
+        self.machine.log("Analyzing playlist...")
 
         self.set_button_state("idle")
 
@@ -488,45 +479,6 @@ class LibraryMachineApp(App):
             0,
         )
 
-    def handle_playlist_result(self, result):
-
-        status = result["status"]
-
-        if status == "missing_videos":
-
-            log("")
-            log("Fix the playlist on YouTube.")
-            log("Press Continue when ready.")
-
-            self.pending_action = "retry_playlist"
-
-            self.set_button_state("continue")
-
-        elif status == "csv_ready":
-
-            log("")
-            log("Edit the master CSV.")
-            log("Press Continue when finished.")
-
-            self.pending_action = "csv_finish"
-
-            self.set_button_state("continue")
-
-        elif status == "up_to_date":
-
-            log("")
-            log("Playlist already synchronized.")
-            log("")
-
-            self.set_button_state("idle")
-
-        else:
-
-            log("")
-            log("Analysis failed.")
-
-            self.set_button_state("idle")
-
     def finish_playlist_thread(self):
 
         success = self.machine.finish_playlist_processing()
@@ -536,24 +488,79 @@ class LibraryMachineApp(App):
             0,
         )
 
-    def finish_playlist_result(self, success):
+    def sync_csv_thread(self):
 
-        if success:
+        result = self.machine.csv_sync(False, True,)
 
-            log("")
-            log("Playlist synchronization complete.")
+        Clock.schedule_once(
+            lambda dt: self.handle_sync_csv_result(result),
+            0,
+        )
+
+    def handle_playlist_result(self, result):
+
+        status = result["status"]
+
+        if status == "missing_videos":
+
+            self.machine.major("Fix the playlist on YouTube.")
+            self.machine.log("Press Continue when ready.")
+
+            self.pending_action = "retry_playlist"
+
+            self.set_button_state("continue")
+
+        elif status == "csv_ready":
+
+            self.machine.major("Edit the master CSV.")
+            self.machine.log("Press Continue when finished.")
+
+            self.pending_action = "csv_finish"
+
+            self.set_button_state("continue")
+
+        elif status == "up_to_date":
+            self.machine.blank()
+            self.machine.log("Playlist already synchronized.")
 
             self.set_button_state("idle")
 
         else:
 
-            log("")
-            log("CSV validation failed.")
-            log("Correct the CSV and press Continue.")
+            self.machine.log("Analysis failed.")
+
+            self.set_button_state("idle")
+
+    def finish_playlist_result(self, success):
+
+        if success:
+
+            self.machine.report("Playlist synchronization complete.")
+
+            self.set_button_state("idle")
+
+        else:
+
+            self.machine.report("CSV validation failed.")
+            self.machine.log("Correct the CSV and press Continue.")
 
             self.pending_action = "csv_finish"
 
             self.set_button_state("continue")
+
+    def handle_sync_csv_result(self, result):
+
+        if result and result.get("status") == "needs_download":
+
+            self.machine.blank()
+            self.machine.log("Undownloaded songs detected.")
+            self.machine.blank()
+            self.machine.log("Download before synchronizing? (Y/N)")
+            self.machine.blank()
+
+            self.pending_action = "sync_download"
+
+            self.set_button_state("yesno")
 
 
 if __name__ == "__main__":

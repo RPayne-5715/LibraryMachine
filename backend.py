@@ -1,8 +1,9 @@
 from pathlib import Path
-import yt_dlp
 from urllib.parse import urlparse, parse_qs
 import csv
 import re
+import textwrap
+import yt_dlp
 from mutagen.oggopus import OggOpus
 
 import sys
@@ -37,8 +38,9 @@ class SilentLogger:
 
 class DownloadLogger:
 
-    def __init__(self):
+    def __init__(self, log):
         self.last_error = None
+        self.log = log
 
     def debug(self, msg):
         pass
@@ -52,25 +54,176 @@ class DownloadLogger:
     def error(self, msg):
         self.last_error = msg
 
-def progress(current, total):
-    pass
+class PathStorage:
+
+    def __init__(self, root):
+        self.root = Path(root)
+
+    def path(self, *parts):
+        return self.root.joinpath(*parts)
+
+    def glob(self, pattern):
+        return self.root.glob(pattern)
+
+    def exists(self, path):
+        return path.exists()
+
+    def rename(self, src, dst):
+        src.rename(dst)
+
+    def mkdir(self, path, **kwargs):
+        path.mkdir(**kwargs)
+
+    def unlink(self, path):
+        path.unlink()
+
+    def read_text(self, path, encoding="utf-8"):
+        return path.read_text(encoding=encoding)
+
+    def write_text(self, path, text, encoding="utf-8"):
+        path.write_text(text, encoding=encoding)
+
+    def open_path(self, path, mode="r", **kwargs):
+        return path.open(mode, **kwargs)
+
+    def file(self, *parts):
+        return self.root.joinpath(*parts)
+
+    def ffmpeg_location(self):
+        return str(
+            Path(__file__).resolve().parent 
+            / "ffmpeg" 
+            / "windows"
+        )
+
+class SAFStorage:
+
+    def __init__(self, tree_uri):
+        pass
+
+    def file(self, *parts):
+        pass
+
+    def open_path(self, path, mode="r", **kwargs):
+        pass
+
+    def exists(self, path):
+        pass
+
+    def glob(self, pattern):
+        pass
+
+    def rename(self, src, dst):
+        pass
+
+    def unlink(self, path):
+        pass
+
+    def mkdir(self, path, **kwargs):
+        pass
+
+    def read_text(self, path, encoding="utf-8"):
+        pass
+
+    def write_text(self, path, text, encoding="utf-8"):
+        pass
+
+    def ffmpeg_location(self):
+        pass
+
 
 class LibraryMachine:
-    hr = "==========================="
-    hrr = "---------------------------"
-    def __init__(
-            self, 
-            library_path,
-            log_callback=None, 
-            progress_callback=None
-        ):
-        self.app_path = Path(__file__).resolve().parent
-        self.library_path = Path(library_path)
+
+    def __init__(self, library_path, log_callback=None, progress_callback=None):
+        self.app_path = Path(__file__).resolve().parent.parent
+
+        if isinstance(library_path, PathStorage):
+            self.storage = library_path
+        else:
+            self.storage = PathStorage(library_path)
+        self.library_path = self.storage.root
 
         self.master_csv = self.app_path / "music_database.csv"
 
         self.log = log_callback or (lambda msg="": None)
         self.progress = progress_callback or (lambda c, t: None)
+
+        self.hrr = "================================"
+        self.hr = "---------------------------"
+
+    def hyphenate_long_words(self, text, available):
+
+        def repl(match):
+
+            word = match.group(0)
+
+            if len(word) <= available:
+                return word
+
+            pieces = []
+
+            while len(word) > available:
+                pieces.append(word[: available - 1] + "-")
+                word = word[available - 1 :]
+
+            pieces.append(word)
+
+            return "\n".join(pieces)
+
+        return re.sub(r"\S+", repl, text)
+
+    def format_song(self, style, index, total, title, artist=""):
+
+        if style == "download":
+            prefix = f"({index}/{total}) "
+            text = f"{title} - {artist}"
+
+        elif style == "missing":
+            prefix = f"({index}/{total}) "
+            text = title
+
+        elif style == "missing_video":
+            prefix = f"{index}. "
+            text = title
+
+        elif style == "failed":
+            prefix = "  - "
+            text = title
+
+        else:
+            prefix = ""
+            text = title
+
+        available = 30 - len(prefix)
+
+        text = self.hyphenate_long_words(text, available)
+
+        return textwrap.fill(
+            prefix + text,
+            width=30,
+            subsequent_indent=" " * len(prefix),
+            break_long_words=False,
+            break_on_hyphens=False,
+        )
+
+    def major(self, title=None):
+        self.log("")
+        self.log(self.hrr)
+        self.log("")
+
+        if title:
+            self.log(title)
+            self.log("")
+
+    def report(self, title):
+        self.log("")
+        self.log(self.hr)
+        self.log(title)
+        self.log(self.hr)
+        self.log("")
+
+    def blank(self):
+        self.log("")
 
     def normalize_playlist_url(self, url):
         if "list=" not in url:
@@ -110,8 +263,8 @@ class LibraryMachine:
     def filter_duplicates(self, entries):
 
         if not self.master_csv.exists():
-            self.log("\nMaster CSV not found. Creating CSV...")
-            with open(self.master_csv, "w", encoding="utf-8-sig", newline="") as f:
+            self.major("Master CSV not found. Creating CSV...")
+            with self.storage.open_path(self.master_csv, "w", encoding="utf-8-sig", newline="") as f:
 
                 writer = csv.writer(f)
 
@@ -121,6 +274,7 @@ class LibraryMachine:
                         "title",
                         "artist",
                         "layer",
+                        "genre",
                         "downloaded",
                     ]
                 )
@@ -129,7 +283,7 @@ class LibraryMachine:
 
         existing_urls = set()
 
-        with open(self.master_csv, "r", encoding="utf-8-sig", newline="") as f:
+        with self.storage.open_path(self.master_csv, "r", encoding="utf-8-sig", newline="") as f:
 
             reader = csv.reader(f)
 
@@ -195,6 +349,7 @@ class LibraryMachine:
                                 "title": video_info.get("title", ""),
                                 "artist": artist,
                                 "layer": layer,
+                                "genre": "",
                                 "downloaded": "NO",
                             }
                         )
@@ -210,12 +365,12 @@ class LibraryMachine:
                         )
         finally:
             self.progress(0, 1)
-            
+
         return analysis_data, missing_entries
 
     def append_to_csv(self, rows):
 
-        with open(self.master_csv, "a", encoding="utf-8-sig", newline="") as f:
+        with self.storage.open_path(self.master_csv, "a", encoding="utf-8-sig", newline="") as f:
 
             writer = csv.writer(f)
 
@@ -227,6 +382,7 @@ class LibraryMachine:
                         row["title"],
                         row["artist"],
                         row["layer"],
+                        row["genre"],
                         row["downloaded"],
                     ]
                 )
@@ -241,7 +397,7 @@ class LibraryMachine:
         rows = []
         errors = []
 
-        with open(self.master_csv, "r", encoding="utf-8-sig", newline="") as f:
+        with self.storage.open_path(self.master_csv, "r", encoding="utf-8-sig", newline="") as f:
 
             reader = csv.DictReader(f)
 
@@ -250,11 +406,13 @@ class LibraryMachine:
                 "title",
                 "artist",
                 "layer",
+                "genre",
                 "downloaded",
             ]
 
             if reader.fieldnames != required:
-                self.log("\nCSV headers are incorrect.")
+                self.blank()
+                self.log("CSV headers are incorrect.")
                 self.log("Expected:\n" + ", ".join(required))
                 return None
 
@@ -270,6 +428,9 @@ class LibraryMachine:
 
                 if not cleaned_row["artist"]:
                     errors.append(f"Row {row_num}: Artist is blank.")
+
+                if not cleaned_row["genre"]:
+                    errors.append(f"Row {row_num}: Genre is blank.")
 
                 if cleaned_row["layer"] not in (
                     "1",
@@ -289,11 +450,7 @@ class LibraryMachine:
 
         if errors:
 
-            self.log("")
-            self.log(self.hrr)
-            self.log("CSV Validation Errors")
-            self.log(self.hrr)
-            self.log("")
+            self.report("CSV Validation Errors")
 
             for error in errors:
                 self.log(error)
@@ -311,6 +468,7 @@ class LibraryMachine:
         audio["title"] = [row["title"]]
         audio["artist"] = [row["artist"]]
         audio["album"] = [LAYER_NAMES[int(row["layer"])]]
+        audio["genre"] = [row["genre"]]
         audio["comment"] = [row["video_url"]]
 
         audio.save()
@@ -319,14 +477,14 @@ class LibraryMachine:
 
         filename = self.safe_filename(row["title"]) + " - " + self.safe_filename(row["artist"])
 
-        download_path = self.library_path / f"{filename}.opus"
+        download_path = self.storage.file(f"{filename}.opus")
 
-        logger = DownloadLogger()
+        logger = DownloadLogger(self.log)
 
         ydl_opts = {
             "format": "bestaudio[acodec=opus]/bestaudio",
-            "ffmpeg_location": str(self.library_path / "ffmpeg"),
-            "outtmpl": str(self.library_path / f"{filename}.%(ext)s"),
+            "ffmpeg_location": self.storage.ffmpeg_location(),
+            "outtmpl": str(self.storage.file(f"{filename}.%(ext)s")),
             "logger": logger,
             "writethumbnail": True,
             "postprocessors": [
@@ -373,9 +531,9 @@ class LibraryMachine:
                 self.safe_filename(row["title"]) + " - " + self.safe_filename(row["artist"]) + ".opus"
             )
 
-            file_path = self.library_path / filename
+            file_path = self.storage.file(filename)
 
-            if file_path.exists():
+            if self.storage.exists(file_path):
 
                 if row["downloaded"] == "NO":
                     row["downloaded"] = "YES"
@@ -390,14 +548,22 @@ class LibraryMachine:
         total = len(pending)
 
         if total == 0:
-            self.log("\nNo songs need downloading.")
+            self.blank()
+            self.log("No songs need downloading.")
             return
 
         for index, row in enumerate(pending, start=1):
 
+            self.progress(index, total)
+
             self.log(
-                f"({index}/{total}) " f"{row['title']} - {row['artist']}",
-                flush=True,
+                self.format_song(
+                    "download",
+                    index,
+                    total,
+                    row["title"],
+                    row["artist"],
+                )
             )
 
             result, error = self.download_track(row)
@@ -412,22 +578,29 @@ class LibraryMachine:
                     }
                 )
 
-        self.log("")
-        self.log(self.hrr)
-        self.log("Download Complete")
-        self.log(self.hrr)
+        self.report("Download Complete")
 
-        self.log(f"\nDownloaded: {downloaded}")
+        self.log(f"Downloaded: {downloaded}")
+        self.blank()
 
         if failed:
 
             self.log(f"\nFailed: {len(failed)}")
 
-            for item in failed:
-                self.log(f"  - {item['title']}")
+            for index, item in enumerate(failed, start=1):
+
+                self.log(
+                    self.format_song(
+                        "failed",
+                        index,
+                        len(failed),
+                        item["title"],
+                    )
+                )
+
                 self.log(f"    {item['error']}")
 
-        with open(self.master_csv, "w", encoding="utf-8-sig", newline="") as f:
+        with self.storage.open_path(self.master_csv, "w", encoding="utf-8-sig", newline="") as f:
 
             writer = csv.writer(f)
 
@@ -437,6 +610,7 @@ class LibraryMachine:
                     "title",
                     "artist",
                     "layer",
+                    "genre",
                     "downloaded",
                 ]
             )
@@ -449,9 +623,12 @@ class LibraryMachine:
                         row["title"],
                         row["artist"],
                         row["layer"],
+                        row["genre"],
                         row["downloaded"],
                     ]
                 )
+
+        self.progress(0, 1)
 
     def build_playlists(self):
 
@@ -461,16 +638,33 @@ class LibraryMachine:
             return
 
         playlists = {
-            1: open(self.library_path / "Dollop.m3u", "w", encoding="utf-8"),
-            2: open(self.library_path / "Peer.m3u", "w", encoding="utf-8"),
-            3: open(self.library_path / "PeerJ.m3u", "w", encoding="utf-8"),
-            4: open(self.library_path / "For Dakota ig.m3u", "w", encoding="utf-8"),
+            1: self.storage.open_path(
+                self.storage.file("Dollop.m3u8"),
+                "w",
+                encoding="utf-8"
+            ),
+            2: self.storage.open_path(
+                self.storage.file("Peer.m3u8"), 
+                "w", 
+                encoding="utf-8"
+            ),
+            3: self.storage.open_path(
+                self.storage.file("PeerJ.m3u8"), 
+                "w", 
+                encoding="utf-8"
+            ),
+            4: self.storage.open_path(
+                self.storage.file("For Dakota_ig.m3u8"), 
+                "w", 
+                encoding="utf-8"
+            ),
         }
 
         try:
 
             for playlist in playlists.values():
                 playlist.write("#EXTM3U\n")
+                playlist.write("#EXTENC:UTF-8\n")
 
             for row in rows:
 
@@ -496,154 +690,267 @@ class LibraryMachine:
             for playlist in playlists.values():
                 playlist.close()
 
-        self.log("\nPlaylists updated.")
+        self.blank()
+        self.log("Playlists updated.")
 
-    def needs_download_before_sync(self):
-        rows = self.read_csv()
+    def index_library(self, rows):
 
-        if rows is None:
-            return False
+        self.log("Indexing library...")
 
-        return any(row["downloaded"] == "NO" for row in rows)
+        url_to_file = {}
 
-    def csv_sync(self, download_first):
-        try:
-            rows = self.read_csv()
+        duplicates_removed = 0
+        deleted_titles = []
 
-            if rows is None:
-                return
+        for file in self.storage.glob("*.opus"):
 
-            pending = any(row["downloaded"] == "NO" for row in rows)
+            try:
 
-            if pending:
+                audio = OggOpus(file)
 
-                self.log("\nUndownloaded songs detected.")
+                url = audio.get("comment", [""])[0]
 
-                if download_first:
+                if url:
 
-                    self.download_pending(rows)
+                    existing = url_to_file.get(url)
 
-                    rows = self.read_csv()
+                    if existing is not None:
 
-                    if rows is None:
-                        return
-            self.log(self.hr)
-            self.log("\nIndexing library...")
+                        existing_time = existing.stat().st_mtime
+                        current_time = file.stat().st_mtime
 
-            url_to_file = {}
+                        if current_time > existing_time:
 
-            for file in self.library_path.glob("*.opus"):
+                            self.storage.unlink(existing)
+                            duplicates_removed += 1
+                            deleted_titles.append(existing.stem)
 
-                try:
+                            url_to_file[url] = file
 
-                    audio = OggOpus(file)
+                        else:
 
-                    url = audio.get("comment", [""])[0]
+                            self.storage.unlink(file)
+                            duplicates_removed += 1
+                            deleted_titles.append(file.stem)
 
-                    if url:
+                    else:
+
                         url_to_file[url] = file
 
-                except Exception:
-                    pass
+            except Exception:
+                pass
 
-            renamed = 0
-            retagged = 0
-            missing = 0
+        missing = 0
+        missing_titles = []
 
-            total = len(rows)
+        total = len(rows)
+
+        for current, row in enumerate(rows, start=1):
+
+            file = url_to_file.get(row["video_url"])
+
+            if file is None:
+
+                row["downloaded"] = "NO"
+
+                missing += 1
+                missing_titles.append(row["title"])
+
+                continue
+
+            row["downloaded"] = "YES"
+
+        return (
+            url_to_file,
+            missing,
+            missing_titles,
+            duplicates_removed,
+            deleted_titles,
+        )
+
+    def synchronize_library(self, rows, url_to_file):
+
+        renamed = 0
+        retagged = 0
+
+        total = len(rows)
+
+        try:
 
             for current, row in enumerate(rows, start=1):
 
                 self.progress(current, total)
+
                 file = url_to_file.get(row["video_url"])
 
                 if file is None:
-
-                    self.log(f"\nMissing: {row['title']}")
-
-                    row["downloaded"] = "NO"
-                    missing += 1
                     continue
 
-                row["downloaded"] = "YES"
+                try:
 
-                expected_name = (
-                    self.safe_filename(row["title"]) + " - " + self.safe_filename(row["artist"]) + ".opus"
-                )
-
-                expected_path = self.library_path / expected_name
-
-                audio = OggOpus(file)
-
-                needs_tag = (
-                    audio.get("title", [""])[0] != row["title"]
-                    or audio.get("artist", [""])[0] != row["artist"]
-                    or audio.get("album", [""])[0] != LAYER_NAMES[int(row["layer"])]
-                    or audio.get("comment", [""])[0] != row["video_url"]
-                )
-
-                if needs_tag:
-
-                    self.tag_opus_file(
-                        file,
-                        row,
+                    expected_name = (
+                        self.safe_filename(row["title"])
+                        + " - "
+                        + self.safe_filename(row["artist"])
+                        + ".opus"
                     )
 
-                    retagged += 1
+                    expected_path = self.storage.file(expected_name)
 
-                if file != expected_path:
+                    audio = OggOpus(file)
 
-                    if not expected_path.exists():
-                        file.rename(expected_path)
+                    needs_tag = (
+                        audio.get("title", [""])[0] != row["title"]
+                        or audio.get("artist", [""])[0] != row["artist"]
+                        or audio.get("album", [""])[0] != LAYER_NAMES[int(row["layer"])]
+                        or audio.get("genre", [""])[0] != row["genre"]
+                        or audio.get("comment", [""])[0] != row["video_url"]
+                    )
 
-                    renamed += 1
+                    if needs_tag:
 
-                    url_to_file[row["video_url"]] = expected_path
+                        self.tag_opus_file(file, row)
 
-            with open(self.master_csv, "w", encoding="utf-8-sig", newline="") as f:
+                        retagged += 1
 
-                writer = csv.writer(f)
+                    if file != expected_path:
+
+                        if not self.storage.exists(expected_path):
+                            self.storage.rename(file, expected_path)
+
+                            renamed += 1
+
+                            url_to_file[row["video_url"]] = expected_path
+
+                except Exception as e:
+
+                    self.log(
+                        f"Failed to synchronize:\n"
+                        f"    {row['title']}\n"
+                        f"    {e}"
+                    )
+
+        finally:
+            self.progress(0, 1)
+
+        return renamed, retagged
+
+    def csv_sync(self, download_first, prompt_if_missing=True):
+
+        rows = self.read_csv()
+
+        if rows is None:
+            return
+
+        if download_first:
+
+            self.download_pending(rows)
+
+            url_to_file, missing, missing_titles, deleted, deleted_titles = (
+                self.index_library(rows)
+            )
+
+        else:
+
+            url_to_file, missing, missing_titles, deleted, deleted_titles = (
+                self.index_library(rows)
+            )
+
+            if missing and prompt_if_missing:
+
+                return {
+                    "status": "needs_download",
+                    "missing": missing,
+                    "missing_titles": missing_titles,
+                }
+
+        renamed, retagged = self.synchronize_library(
+            rows,
+            url_to_file,
+        )
+
+        with self.storage.open_path(
+            self.master_csv,
+            "w",
+            encoding="utf-8-sig",
+            newline="",
+        ) as f:
+
+            writer = csv.writer(f)
+
+            writer.writerow(
+                [
+                    "video_url",
+                    "title",
+                    "artist",
+                    "layer",
+                    "genre",
+                    "downloaded",
+                ]
+            )
+
+            for row in rows:
 
                 writer.writerow(
                     [
-                        "video_url",
-                        "title",
-                        "artist",
-                        "layer",
-                        "downloaded",
+                        row["video_url"],
+                        row["title"],
+                        row["artist"],
+                        row["layer"],
+                        row["genre"],
+                        row["downloaded"],
                     ]
                 )
 
-                for row in rows:
+        self.build_playlists()
 
-                    writer.writerow(
-                        [
-                            row["video_url"],
-                            row["title"],
-                            row["artist"],
-                            row["layer"],
-                            row["downloaded"],
-                        ]
-                    )
+        self.report("CSV Synchronization Complete")
 
-            self.build_playlists()
+        printed = False
 
-            self.log("")
-            self.log(self.hrr)
-            self.log("CSV Synchronization Complete")
-            self.log(self.hrr)
+        if renamed:
+            self.log(f"Renamed: {renamed}")
+            printed = True
 
-            self.log(f"\nRenamed: {renamed}")
+        if retagged:
             self.log(f"Retagged: {retagged}")
+            printed = True
 
-            if missing:
+        if deleted:
+            self.log(f"Deleted: {deleted}")
 
-                self.log(f"Missing: {missing}")
+            for index, title in enumerate(deleted_titles, start=1):
+                self.log(
+                    self.format_song(
+                        "missing",
+                        index,
+                        deleted,
+                        title,
+                    )
+                )
 
-            self.log("\nFinished.")
-            self.log("")
-        finally:
-            self.progress(0, 1)
+            printed = True
+
+        if missing:
+            self.log(f"Missing: {missing}")
+
+            for index, title in enumerate(missing_titles, start=1):
+                self.log(
+                    self.format_song(
+                        "missing",
+                        index,
+                        missing,
+                        title,
+                    )
+                )
+
+            printed = True
+
+        if not printed:
+            self.log("No changes.")
+
+        self.blank()
+        self.log("Finished.")
 
     def analyze_playlist(self, url):
 
@@ -669,14 +976,17 @@ class LibraryMachine:
 
             if missing_entries:
 
-                self.log("")
-                self.log(self.hrr)
-                self.log("Missing Videos Found")
-                self.log(self.hrr)
-                self.log("")
+                self.report("Missing Videos Found")
 
                 for i, entry in enumerate(missing_entries, start=1):
-                    self.log(f"{i}. {entry['title']}")
+                    self.log(
+                        self.format_song(
+                            "missing_video",
+                            i,
+                            len(missing_entries),
+                            entry["title"],
+                        )
+                    )
                     self.log(f"    {entry['video_url']}")
                     self.log(f"    {entry['error']}\n")
 
@@ -687,7 +997,8 @@ class LibraryMachine:
                     "missing_entries": missing_entries,
                 }
 
-            self.log("\nAnalysis complete.")
+            self.blank()
+            self.log("Analysis complete.")
 
             self.append_to_csv(analysis_data)
 
