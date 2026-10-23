@@ -14,15 +14,31 @@ A personal music library manager built with Python and Kivy for Android, with a 
 
 ## Usage
 
-1. On Android, grant the requested **All files access** permission. The library is stored in `/storage/emulated/0/Music/PlaylistLibrary`.
-2. Copy a playlist URL, press **Playlist**, then **Paste**.
-3. Wait for analysis. If unavailable videos are reported, fix the source playlist and press **Continue** to retry.
-4. When prompted, open `music_database.csv` in a CSV editor. Review titles and artists, fill in genres, and optionally assign layers. Save the file before returning to the app.
-5. Press **Continue** to validate the CSV, download missing tracks, and generate local playlists.
+This application expects a pre-existing music library, but will work without one. Trying to create a new music library with this tool will be a tedious and spreadsheet-heavy process but is doable.
 
-After editing existing entries, press **Sync CSV** to apply metadata and filename changes. If tracks are missing, choose **Y** to download them before synchronizing or **N** to synchronize existing files only.
+1. **Add any songs you want to add to your library to a new playlist. Copy the share link of the playlist to your clipboard** Youtube or Youtube Music playlists will both work.
+2. **Hit the Playlist button to start the process.**
+3. **Wait for the app to finish appending the entries to `music_database.csv`**
+4. **Hit the *Open CSV* button to open the CSV editor**. Edit titles, artists, genres, and playlist layers to your desires
+  - Layers work as follows:
+    - Each layer refers to a playlist
+    - Each layer playlist contains all the songs of any layers beneath it.
+    - Songs unique to each layer will be put in an album of the same name as the layer
+    - There is no current way to change these names
+5. **Save the CSV and return to the app. Proceed to downloading the songs**
 
-**Sync CSV can delete duplicate audio files:** files sharing the same source URL in their comment tag are treated as duplicates, and the file with the newest modification time is retained.
+***Notes:*** Some songs will return errors when trying to download. In most cases, rerunning the process via ***Sync CSV*** will fix the error and correctly download the song. If not, the issue is likely licensing. Replace the Video ID of the entry in the CSV with the Video ID of a fan upload or a lyric video of the song.
+
+The app utilizes the following app for CSV editing.
+https://play.google.com/store/apps/details?id=com.livinlabs.csvforge&hl=en-ZA
+
+Built for Pixel8. See buildozer.spec for more compatibility information.
+
+On first boot, the app lets you select the location of your music library.
+
+If no CSV exists upon trying to download a playlist, a blank csv will be generated and filled
+
+Files sharing the same source URL in their comment tag are treated as duplicates, and the file with the newest modification time is retained.
 
 ## CSV format
 
@@ -33,19 +49,19 @@ date_added,video_url,title,artist,layer,genre,downloaded
 2026-10-23,https://youtu.be/VIDEO_ID,Example Song,Example Artist,1,Pop,NO
 ```
 
-| Column | Purpose |
-| --- | --- |
-| `date_added` | Import date in `YYYY-MM-DD` format. Blank values become `Unknown` when read. |
-| `video_url` | Required source URL; also stored in the audio comment tag for indexing. |
-| `title` | Track title and the first part of its filename. |
-| `artist` | Required artist name and the second part of its filename. |
-| `layer` | Blank or a number from `1` through `4`. |
-| `genre` | Required genre text, supplied manually. |
-| `downloaded` | `YES` or `NO`; updated during downloading and library indexing. |
+| Column | Required? | Purpose |
+| --- | --- | --- |
+| `date_added` | --- | Import date in `YYYY-MM-DD` format. Blank values become `Unknown` when read. |
+| `video_url` | Yes | Required source URL; also stored in the audio comment tag for indexing. |
+| `title` | Yes | Track title and the first part of its filename. |
+| `artist` | Yes | Required artist name and the second part of its filename. |
+| `layer` | No | Blank or a number from `1` through `4`. |
+| `genre` | Yes | Genre, supplied manually. |
+| `downloaded` | --- | `YES` or `NO`; updated during downloading and library indexing. Refers to the success of the download. |
 
-The CSV uses UTF-8 with a BOM. Additional columns after the required columns are preserved during normal rewrites. New imports leave genre and layer blank; genre must be filled before validation succeeds.
+The CSV uses UTF-8 with a BOM. Some Mojibake issues remain. Additional columns after the required columns are preserved during normal rewrites. New imports leave genre and layer blank; genre must be filled before validation succeeds.
 
-Audio filenames use `Title - Artist.opus`, with unsupported filename characters replaced by underscores. Renaming or retagging an existing track should be done through the CSV followed by **Sync CSV**.
+Audio filenames use `Title - Artist.opus`, with unsupported filename characters replaced by underscores. Renaming or retagging an existing track should be done through the CSV followed by **Sync CSV**, else your changes will be over-written next sync.
 
 ## Layers and generated playlists
 
@@ -93,25 +109,12 @@ The desktop library path is calculated as `Path(__file__).resolve().parent.paren
 
 ## Android build
 
-Use the project's configured Buildozer/python-for-android environment. From the project directory inside that environment:
-
-```bash
-buildozer -v android debug
-```
-
-Build output is written to `bin/` unless configured otherwise. Android packaging must include the project's vendored dependencies, assets, and compatible executable FFmpeg tools. The supplied build specification targets `arm64-v8a` and requests internet and all-files access. Its dependency list must match the current code, including the `pytubefix` import or its vendored copy.
-
-To inspect device logs with ADB available:
-
-```bash
-adb logcat PythonActivity:V python:V SDL:V AndroidRuntime:E '*:S'
-```
+Included is the Buildozer.spec and a customized pytubefix. Feel free to build yourself, idk.
 
 ## Current limitations
 
 - Playlist import duplicate detection is incomplete in the reviewed source: `filter_duplicates()` reads the first CSV column as a URL, although that column is now `date_added`. Reimporting a playlist can therefore append duplicate rows.
 - The Android **Open CSV** handler launches a CSV viewer intent without attaching the database URI. Open the database directly in your editor until file handoff is implemented.
 - YouTube synchronization and CSV pull handlers are placeholders; the current interface exposes playlist import and CSV synchronization.
-- Downloads can fail independently. Check the console result counts even when the workflow reports completion.
 
 This README describes the supplied source snapshot. The Android build and runtime behavior have not been verified as part of this documentation update.
