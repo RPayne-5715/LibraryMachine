@@ -1,95 +1,111 @@
 # Library Machine
 
-A personal music library manager built with Python and Kivy for Android, with a Windows development interface. Library Machine imports YouTube playlists into a master CSV, downloads audio as Opus files, and uses CSV metadata to maintain filenames, audio tags, and local playlists.
+A personal music library manager built with Python and Kivy for Android, with a Windows interface for development. It imports YouTube playlists into a master CSV, downloads songs as Opus files, and uses the spreadsheet to keep filenames, tags, and local playlists in sync.
+
+Built for a **Pixel8**. See [`buildozer.spec`](buildozer.spec) for build settings and compatibility details.
 
 ## Features
 
-- Import a YouTube or YouTube Music playlist by pasting its URL.
-- Extract video URLs, titles, and artist information for manual review.
-- Download audio as `.opus` files with embedded thumbnails.
-- Edit library metadata through `music_database.csv`.
-- Synchronize filenames and title, artist, album, genre, and source URL tags.
-- Generate four cumulative `.m3u8` playlists based on assigned layers.
-- Display progress, validation errors, and download results in the app console.
+- Import YouTube and YouTube Music playlists from a share link.
+- Pull video URLs, titles, and artist names for you to review.
+- Download songs as `.opus` files with embedded thumbnails.
+- Manage metadata through `music_database.csv`.
+- Sync filenames and title, artist, album, genre, and source URL tags.
+- Generate four cumulative `.m3u8` playlists using layers.
+- Show progress, errors, and download results in the app console.
 
 ## Usage
 
-This application expects a pre-existing music library, but will work without one. Trying to create a new music library with this tool will be a tedious and spreadsheet-heavy process but is doable.
+This is mostly meant for maintaining my existing music library. You can build a library from scratch with it, but be prepared to spend 7-10 business days in the spreadsheet.
 
-1. **Add any songs you want to add to your library to a new playlist. Copy the share link of the playlist to your clipboard** Youtube or Youtube Music playlists will both work.
-2. **Hit the Playlist button to start the process.**
-3. **Wait for the app to finish appending the entries to `music_database.csv`**
-4. **Hit the *Open CSV* button to open the CSV editor**. Edit titles, artists, genres, and playlist layers to your desires
-  - Layers work as follows:
-    - Each layer refers to a playlist
-    - Each layer playlist contains all the songs of any layers beneath it.
-    - Songs unique to each layer will be put in an album of the same name as the layer
-    - There is no current way to change these names
-5. **Save the CSV and return to the app. Proceed to downloading the songs**
+On first launch, select your music library folder. If there's no `music_database.csv`, the app creates one when you import a playlist.
 
-***Notes:*** Some songs will return errors when trying to download. In most cases, rerunning the process via ***Sync CSV*** will fix the error and correctly download the song. If not, the issue is likely licensing. Replace the Video ID of the entry in the CSV with the Video ID of a fan upload or a lyric video of the song.
+1. Put the songs you want to add in a YouTube or YouTube Music playlist and copy its share link.
+2. Press **Playlist**, then **Paste**.
+3. Wait for the app to analyze the playlist and add the entries to `music_database.csv`.
+4. Press **Open CSV**. Fix up titles and artists, fill in genres, and assign layers if you want them in the generated playlists.
+5. Save the CSV, return to the app, and press **Continue** to download the songs and build the playlists.
 
-The app utilizes the following app for CSV editing.
-https://play.google.com/store/apps/details?id=com.livinlabs.csvforge&hl=en-ZA
+The app uses [CSVLabs](https://play.google.com/store/apps/details?id=com.livinlabs.csvforge) for editing. If **Open CSV** doesn't open the database, open `music_database.csv` directly in the editor.
 
-Built for Pixel8. See buildozer.spec for more compatibility information.
+### Updating your library
 
-On first boot, the app lets you select the location of your music library.
+Edit the CSV, save it, then press **Sync CSV** to update filenames, tags, and playlists. If you change audio tags or filenames outside the app, the next sync may overwrite those changes.
 
-If no CSV exists upon trying to download a playlist, a blank csv will be generated and filled
+If songs are missing, choose **Y** to download them before syncing or **N** to just sync the files you already have.
 
-Files sharing the same source URL in their comment tag are treated as duplicates, and the file with the newest modification time is retained.
+Files with the same source URL in their comment tag count as duplicates. When indexing the library, the app keeps whichever file was modified most recently and deletes the others.
+
+### Failed downloads
+
+Some downloads will fail. Try running **Sync CSV** again; a retry will often work.
+
+If a song keeps failing, the video might be unavailable or restricted. Try replacing its source URL in the CSV with another upload of the same song, such as a lyric video or fan upload.
 
 ## CSV format
 
-The first seven columns must appear in this order:
+The first seven columns need to stay in this order:
 
 ```csv
 date_added,video_url,title,artist,layer,genre,downloaded
 2026-10-23,https://youtu.be/VIDEO_ID,Example Song,Example Artist,1,Pop,NO
 ```
 
-| Column | Required? | Purpose |
+| Column | Entry | What it's for |
 | --- | --- | --- |
-| `date_added` | --- | Import date in `YYYY-MM-DD` format. Blank values become `Unknown` when read. |
-| `video_url` | Yes | Required source URL; also stored in the audio comment tag for indexing. |
-| `title` | Yes | Track title and the first part of its filename. |
-| `artist` | Yes | Required artist name and the second part of its filename. |
-| `layer` | No | Blank or a number from `1` through `4`. |
-| `genre` | Yes | Genre, supplied manually. |
-| `downloaded` | --- | `YES` or `NO`; updated during downloading and library indexing. Refers to the success of the download. |
+| `date_added` | Automatic | Date imported, formatted as `YYYY-MM-DD`. Blank values are read as `Unknown`. |
+| `video_url` | Required | Source URL. Also stored in the audio comment tag so the app can identify the file. |
+| `title` | Track title | Used for the title tag and filename. |
+| `artist` | Required | Used for the artist tag and filename. |
+| `layer` | Optional | Blank or `1`–`4`. Controls playlist membership and the album tag. |
+| `genre` | Required | Filled in manually. |
+| `downloaded` | App-managed | `YES` or `NO`, updated based on downloads and the files found when indexing. |
 
-The CSV uses UTF-8 with a BOM. Some Mojibake issues remain. Additional columns after the required columns are preserved during normal rewrites. New imports leave genre and layer blank; genre must be filled before validation succeeds.
+New imports leave genre and layer blank. You need to fill in genre before continuing, but layer can stay blank.
 
-Audio filenames use `Title - Artist.opus`, with unsupported filename characters replaced by underscores. Renaming or retagging an existing track should be done through the CSV followed by **Sync CSV**, else your changes will be over-written next sync.
+The CSV uses UTF-8 with a BOM. Some mojibake issues remain. Extra columns after the required ones are preserved during normal rewrites.
 
-## Layers and generated playlists
+Files are named `Title - Artist.opus`. Characters that aren't allowed in filenames get replaced with underscores.
 
-| Layer | Album tag | Generated playlist | Included layers |
+Generated playlists follow the order of the rows in the CSV. If you sort the table by artist, title, date, or anything else and save it, the next playlist rebuild will use that order. Sort whole rows together in a table format so each song's fields stay matched.
+
+Note that Album art is pulled from the Youtube thumbnail.
+
+## Layers and playlists
+
+Each layer has a playlist. They stack. A playlist includes its own layer and every lower-numbered layer. The song's album tag comes from its assigned layer.
+
+| Layer | Album tag | Playlist file | Included layers |
 | --- | --- | --- | --- |
 | `1` | Dollop | `Dollop.m3u8` | 1 |
 | `2` | Peer | `Peer.m3u8` | 1–2 |
 | `3` | PeerJ | `PeerJ.m3u8` | 1–3 |
 | `4` | For Dakota ig | `For Dakota_ig.m3u8` | 1–4 |
 
-Tracks with a blank layer are excluded from generated playlists and receive the album tag `Blank` when tagged. Playlist entries use filenames relative to the library folder; only rows marked `YES` are included.
+These are my playlist names. They're currently hardcoded, so changing them means editing the code. My bad.
+
+Songs with a blank layer stay out of the generated playlists and get the album tag `Blank` when tagged.
+
+**The `.m3u8` paths are relative.** Each entry is just the audio filename, resolved from the folder containing the playlist. Keep the playlist files alongside the `.opus` files. You can move the whole folder together without changing the paths, but moving a playlist somewhere else will break its references.
+
+Within each playlist, songs appear in CSV row order. Layers decide which songs are included; they don't change the sorting.
 
 ## Project files
 
-| Path | Role |
+| Path | What's in it |
 | --- | --- |
-| `main.py` | Kivy application, Android integration, and background task coordination. |
-| `backend.py` | Playlist analysis, CSV validation, downloads, tagging, and synchronization. |
+| `main.py` | Kivy app, Android integration, and background tasks. |
+| `backend.py` | Playlist analysis, CSV handling, downloads, tagging, and syncing. |
 | `librarymachine.kv` | Screens, button styles, console, and progress display. |
-| `buildozer.spec` | Android packaging configuration. |
-| `assets/` | Images and fonts used by the interface. |
-| `vendor/` | Local Python dependencies or patched packages; searched before installed packages by the backend. |
+| `buildozer.spec` | Android build configuration. |
+| `assets/` | Images and fonts. |
+| `vendor/` | Local dependencies and patched packages, loaded before installed packages by the backend. |
 | `ffmpeg/windows/` | Windows FFmpeg tools. |
 | `ffmpeg/android/` | Android FFmpeg tools. |
 
 ## Windows development
 
-From the directory containing `main.py`:
+From the folder containing `main.py`:
 
 ```powershell
 python -m venv .venv
@@ -98,23 +114,33 @@ python -m pip install kivy yt-dlp mutagen pytubefix certifi
 python main.py
 ```
 
-Keep any project-specific patched dependencies in `vendor/`. Supply FFmpeg and FFprobe in `ffmpeg/windows/`, along with the images and fonts referenced by the application:
+Keep the project's patched dependencies in `vendor/`. Put FFmpeg and FFprobe in `ffmpeg/windows/`, and keep these files in `assets/`:
 
-- `assets/presplash.png`
-- `assets/progress_gradient.png`
-- `assets/CourierPrime-Regular.ttf`
-- `assets/Jua-Regular.ttf`
+- `presplash.png`
+- `progress_gradient.png`
+- `CourierPrime-Regular.ttf`
+- `Jua-Regular.ttf`
 
-The desktop library path is calculated as `Path(__file__).resolve().parent.parent.parent / "PlaylistLibrary"` in `main.py`. Check that location before running from a different checkout layout. Desktop file-opening actions use Windows `os.startfile()`.
+The Windows library path is set in `main.py`:
+
+```python
+Path(__file__).resolve().parent.parent.parent / "PlaylistLibrary"
+```
+
+Check where that points if your folder layout is different. Opening files from the desktop app uses Windows `os.startfile()`.
 
 ## Android build
 
-Included is the Buildozer.spec and a customized pytubefix. Feel free to build yourself, idk.
+The project includes `buildozer.spec` and a customized copy of `pytubefix`. Use the project's patched dependencies when building; installing the standard packages might not give you the same results and may cause significant hair loss.
 
-## Current limitations
+This was not built for wide compatibility, so expect some fiddling if you're building it yourself.
 
-- Playlist import duplicate detection is incomplete in the reviewed source: `filter_duplicates()` reads the first CSV column as a URL, although that column is now `date_added`. Reimporting a playlist can therefore append duplicate rows.
-- The Android **Open CSV** handler launches a CSV viewer intent without attaching the database URI. Open the database directly in your editor until file handoff is implemented.
-- YouTube synchronization and CSV pull handlers are placeholders; the current interface exposes playlist import and CSV synchronization.
+## Known issues and unfinished bits
+aka Why There Are No Releases
 
-This README describes the supplied source snapshot. The Android build and runtime behavior have not been verified as part of this documentation update.
+- **Duplicate playlist imports:** In this source snapshot, `filter_duplicates()` still treats the first CSV column as a URL, even though it's now `date_added`. Importing the same playlist again can add duplicate rows.
+- **Opening the CSV on Android:** The current handler opens a CSV viewer without passing it the database URI. You may need to open the file manually.
+- **Unfinished handlers:** YouTube sync and CSV pull are placeholders and aren't shown in the current interface.
+- **Mojibake:** Some text still comes through garbled.
+
+These notes reflect the supplied source snapshot. The Android build and runtime weren't tested as of currently. In fact, as of currently the Android build is broke sooooooooooooooooooooooooooooooooo 
