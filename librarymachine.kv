@@ -8,13 +8,13 @@
     background_normal: ""
     background_down: ""
     background_color: 0, 0, 0, 0
-    color: 0xC6/255, 0xC6/255, 0xC6/255, 1
+    color: ((0xC6/255, 0xC6/255, 0xC6/255, 0.5) if self.disabled else (0xC6/255, 0xC6/255, 0xC6/255, 1))
     font_name: "Jua"
     font_size: "28sp"
 
     canvas.before:
         Color: 
-            rgb: (0x3F/255, 0x51/255, 0x4A/255) if self.state == "down" else (0x31/255, 0x3D/255, 0x38/255)
+            rgba: ((0x31/255, 0x3D/255, 0x38/255, 0.5) if self.disabled else ((0x3F/255, 0x51/255, 0x4A/255, 1) if self.state == "down" else (0x31/255, 0x3D/255, 0x38/255, 1)))
 
         RoundedRectangle:
             pos: self.pos
@@ -31,6 +31,22 @@
     canvas.before:
         Color: 
             rgb: (0x40/255, 0x55/255, 0x58/255) if self.state == "down" else (0x30/255, 0x3D/255, 0x3F/255)
+
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(22)]
+<TBButton@Button>:
+    background_normal: ""
+    background_down: ""
+    background_color: 0, 0, 0, 0
+    color: 0xC6/255, 0xC6/255, 0xC6/255, 1
+    font_name: "Jua"
+    font_size: "30sp"
+
+    canvas.before:
+        Color: 
+            rgb: (0x3D/255, 0x4B/255, 0x54/255) if self.state == "down" else (0x2F/255, 0x3C/255, 0x43/255)
 
         RoundedRectangle:
             pos: self.pos
@@ -121,14 +137,17 @@
             spacing: "13dp"
 
             GnButton:
+                id: folder_button
                 text: "Folder"
                 on_release: app.folder_pressed()
 
             GnButton:
+                id: player_button
                 text: "Player"
                 on_release: app.player_pressed()
 
             GnButton:
+                id: csv_button
                 text: "CSV"
                 on_release: app.csv_pressed()
         BoxLayout:
@@ -141,6 +160,13 @@
                 on_release: app.sync_csv_pressed()
 
             TButton:
+                text: "Pull CSV"
+                on_release: app.pull_csv_pressed()
+        BoxLayout:
+            size_hint_y: None
+            height: "43dp"
+
+            TBButton:
                 text: "Sync YT"
                 on_release: app.sync_yt_pressed()
         Widget:
@@ -304,6 +330,7 @@
 
                 GButton:
                     text: "Paste"
+                    on_release: app.paste_pressed()
             BoxLayout:
                 id: yesno_buttons
                 spacing: "10dp"

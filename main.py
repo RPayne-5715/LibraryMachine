@@ -11,22 +11,43 @@ from kivy.uix.label import Label
 from kivy.uix.screenmanager import ScreenManager, FadeTransition, Screen
 from kivy.uix.widget import Widget
 from kivy.utils import platform
+from kivy.core.clipboard import Clipboard
 
-
-if platform == "android":
-    from android import activity
-    from jnius import autoclass
-
-    Intent = autoclass("android.content.Intent")
-    PythonActivity = autoclass("org.kivy.android.PythonActivity")
-else:
-    Window.size = (412, 915)
-
+from backend import LibraryMachine, PathStorage, PLAYLIST_URLS
 from pathlib import Path
 from datetime import datetime
 from threading import Thread
+import traceback
 
-from backend import LibraryMachine, PathStorage, PLAYLIST_URLS
+LIBRARY_FOLDER_NAME = "PlaylistLibrary"
+
+FOLDER_REQUEST = 2001
+
+__version__ = "0.20"
+
+spec = Path(__file__).with_name("buildozer.spec")
+
+if platform == "android":
+    from jnius import autoclass
+    from android import activity
+
+    Intent = autoclass("android.content.Intent")
+    Uri = autoclass("android.net.Uri")
+
+    PythonActivity = autoclass("org.kivy.android.PythonActivity")
+    Environment = autoclass("android.os.Environment")
+    Settings = autoclass("android.provider.Settings")
+
+    LIBRARY_ROOT = Path("/storage/emulated/0/Music")
+
+    DocumentsContract = autoclass("android.provider.DocumentsContract")
+
+else:
+    Window.size = (412, 750)
+    # 412, 915
+    LIBRARY_ROOT = Path(__file__).resolve().parent.parent.parent
+
+LIBRARY_PATH = LIBRARY_ROOT / LIBRARY_FOLDER_NAME
 
 gradient = CoreImage("assets/progress_gradient.png").texture
 gradient.wrap = "clamp_to_edge"
@@ -40,7 +61,6 @@ Window.clearcolor = (
     0x1C / 255,
     1,
 )
-
 
 LabelBase.register(
     name="Console",
@@ -103,11 +123,8 @@ class LibraryMachineApp(App):
         self.pending_action = None
         self.current_playlist_url = None
 
-        self.store = JsonStore(
-            str(
-                Path(self.user_data_dir) / "settings.json"
-            )
-        )
+        self.folder_uri = None
+        self.store = JsonStore(str(Path(self.user_data_dir) / "settings.json"))
 
         return None
 
@@ -119,92 +136,87 @@ class LibraryMachineApp(App):
             progress_callback=self.update_progress,
         )
 
-    def pick_library_folder(self):
+    def initialize_library(self):
 
-        intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+        library_folder = LIBRARY_PATH
+        library_folder.mkdir(parents=True, exist_ok=True)
 
-        PythonActivity.mActivity.startActivityForResult(
-            intent,
-            1001,
-        )
-
-    def activity_result(
-        self,
-        request_code,
-        result_code,
-        intent,
-    ):
-
-        if request_code != 1001:
+        try:
+            test = library_folder / ".write_test"
+            test.write_text("")
+            test.unlink()
+        except Exception as e:
+            traceback.print_exc()
             return
-
-        if intent is None:
-            return
-
-        uri = intent.getData()
-
-        print(uri.toString())
-
-        flags = (
-            Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-        )
-
-        PythonActivity.mActivity.getContentResolver().takePersistableUriPermission(
-            uri,
-            flags,
-        )
-
-        self.store.put(
-            "library",
-            uri=uri.toString(),
-        )
 
         self.create_machine(
-            PathStorage(
-                Path(App.get_running_app().user_data_dir) / "PlaylistLibrary"
-            )
+            PathStorage(library_folder)
         )
 
     def on_start(self):
         if platform == "android":
 
-            if self.store.exists("library"):
+            android_activity = PythonActivity.mActivity
 
-                uri = self.store.get("library")["uri"]
+            if not Environment.isExternalStorageManager():
 
-                print(f"Saved URI: {uri}")
+                intent = Intent(
+                    Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION
+                )
 
-                self.create_machine(
-                    PathStorage(
-                        Path(App.get_running_app().user_data_dir) / "PlaylistLibrary"
+                intent.setData(
+                    Uri.parse(
+                        "package:" + android_activity.getPackageName()
                     )
                 )
 
-            else:
+                try:
+                    android_activity.startActivity(intent)
+                    return
+                except Exception as e:
+                    traceback.print_exc()
 
-                self.pick_library_folder()
+        self.initialize_library()
 
-        else:
+        if platform == "android":
 
-            library_folder = Path(__file__).resolve().parent.parent
+            activity.bind(on_activity_result=self.activity_result)
 
-            self.create_machine(
-                PathStorage(library_folder)
-            )
+            if self.store.exists("folder"):
+
+                self.folder_uri = Uri.parse(
+                    self.store.get("folder")["uri"]
+                )
+
+                self.machine.log("Folder restored.")
+                self.machine.log(self.folder_uri.toString())
 
         Clock.schedule_once(
             self.finish_loading,
             3,
         )
 
-        if platform == "android":
-            activity.bind(on_activity_result=self.activity_result)
-
     def on_pause(self):
         return True
 
     def on_resume(self):
-        pass
+
+        if platform != "android":
+            return
+
+        if self.machine is not None:
+            return
+
+        if not Environment.isExternalStorageManager():
+            return
+
+        self.initialize_library()
+
+        self.finish_loading(0)
+
+        def on_stop(self):
+            if platform == "android":
+                activity.unbind(on_activity_result=self.activity_result)
 
     def finish_loading(self, dt):
 
@@ -227,6 +239,9 @@ class LibraryMachineApp(App):
                 "\n" * CONSOLE_PADDING
             )
             self.machine.log("~ Library Machine ~")
+            self.machine.log(f"v{__version__}")
+
+            main = self.root.get_screen("main")
 
         anim.bind(on_complete=switch)
         anim.start(splash)
@@ -300,7 +315,10 @@ class LibraryMachineApp(App):
             self.set_button_state("idle")
 
             Thread(
-                target=lambda: self.machine.csv_sync(True, False,),
+                target=lambda: self.machine.csv_sync(
+                    True,
+                    False,
+                ),
                 daemon=True,
             ).start()
 
@@ -313,7 +331,10 @@ class LibraryMachineApp(App):
             self.set_button_state("idle")
 
             Thread(
-                target=lambda: self.machine.csv_sync(False, False,),
+                target=lambda: self.machine.csv_sync(
+                    False,
+                    False,
+                ),
                 daemon=True,
             ).start()
 
@@ -334,7 +355,7 @@ class LibraryMachineApp(App):
 
         elif self.pending_action == "csv_finish":
 
-            self.major("Downloading songs...")
+            self.machine.major("Downloading songs...")
 
             self.set_button_state("idle")
 
@@ -347,40 +368,100 @@ class LibraryMachineApp(App):
 
     #
 
-    def folder_pressed(self):
+    def activity_result(
+        self,
+        request_code,
+        result_code,
+        intent,
+    ):
 
-        if platform != "android":
-            self.machine.major("Android only.")
+        self.machine.log("activity_result()")
+
+        if request_code != FOLDER_REQUEST:
             return
 
-        Intent = autoclass("android.content.Intent")
-        Uri = autoclass("android.net.Uri")
-        File = autoclass("java.io.File")
+        if intent is None:
+            return
+
+        uri = intent.getData()
+
+        if uri is None:
+            return
+
+        self.folder_uri = uri
+
+        self.machine.log(uri.toString())
+
+        self.store.put(
+            "folder",
+            uri=uri.toString(),
+        )
+
+        self.machine.log("Folder saved.")
 
         activity = PythonActivity.mActivity
 
-        folder = str(Path(App.get_running_app().user_data_dir))
+        flags = (
+            Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+        )
+
+        activity.getContentResolver().takePersistableUriPermission(
+            uri,
+            flags,
+        )
+
+    #
+
+    def folder_pressed(self):
+
+        if platform != "android":
+            import os
+
+            os.startfile(LIBRARY_PATH)
+            return
+
+        android_activity = PythonActivity.mActivity
+
+        if self.folder_uri is None:
+
+            intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+
+            android_activity.startActivityForResult(
+                intent,
+                FOLDER_REQUEST,
+            )
+
+            return
 
         intent = Intent(Intent.ACTION_VIEW)
 
-        uri = Uri.fromFile(File(folder))
+        intent.setDataAndType(
+            self.folder_uri,
+            DocumentsContract.Document.MIME_TYPE_DIR,
+        )
 
-        intent.setDataAndType(uri, "*/*")
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
 
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-
-        activity.startActivity(intent)
+        try:
+            android_activity.startActivity(intent)
+        except Exception:
+            self.disable_button(
+                "folder_button",
+                "Unable to open Google Files."
+            )
 
     def player_pressed(self):
 
         if platform != "android":
-            self.machine.major("Android only.")
+            self.machine.blank()
+            self.machine.log("Android only.")
             return
 
         Intent = autoclass("android.content.Intent")
         ComponentName = autoclass("android.content.ComponentName")
 
-        activity = PythonActivity.mActivity
+        android_activity = PythonActivity.mActivity
 
         intent = Intent()
 
@@ -394,34 +475,42 @@ class LibraryMachineApp(App):
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
         if intent:
-            activity.startActivity(intent)
+            try:
+                android_activity.startActivity(intent)
+            except Exception:
+                self.disable_button(
+                    "player_button",
+                    "Poweramp not installed."
+                )
         else:
             log("Poweramp is not installed.")
 
     def csv_pressed(self):
 
         if platform != "android":
-            self.machine.major("Android only.")
+            import os
 
+            os.startfile(self.machine.master_csv)
+            return
+
+        if not self.machine.master_csv.exists():
+            self.machine.blank()
+            self.machine.log("music_database.csv does not exist.")
+            self.machine.log("Analyze a playlist first.")
             return
 
         Intent = autoclass("android.content.Intent")
-        Uri = autoclass("android.net.Uri")
-        File = autoclass("java.io.File")
-
-        activity = PythonActivity.mActivity
-
-        csv = str(Path(App.get_running_app().user_data_dir) / "music_database.csv")
 
         intent = Intent(Intent.ACTION_VIEW)
+        intent.setType("text/csv")
 
-        uri = Uri.fromFile(File(csv))
-
-        intent.setDataAndType(uri, "text/*")
-
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-
-        activity.startActivity(intent)
+        try:
+            PythonActivity.mActivity.startActivity(intent)
+        except Exception:
+            self.disable_button(
+                "csv_button",
+                "CSVLabs not installed."
+            )
 
     def sync_csv_pressed(self):
 
@@ -437,6 +526,9 @@ class LibraryMachineApp(App):
     def sync_yt_pressed(self):
         self.machine.major("Not Yet Implemented")
 
+    def pull_csv_pressed(self):
+        self.machine.major("Not Yet Implemented")
+
     def playlist_pressed(self, playlist):
 
         if playlist == 5:
@@ -448,6 +540,7 @@ class LibraryMachineApp(App):
             return
 
         self.current_playlist_url = PLAYLIST_URLS[playlist]
+        self.current_layer = playlist
 
         names = {
             1: "Dollop",
@@ -457,6 +550,38 @@ class LibraryMachineApp(App):
         }
 
         self.machine.major(f"{names[playlist]} selected.")
+        self.machine.log("Analyzing playlist...")
+
+        self.set_button_state("idle")
+
+        Thread(
+            target=self.analyze_playlist_thread,
+            daemon=True,
+        ).start()
+
+    def disable_button(self, button_id, message):
+
+        main = self.root.get_screen("main")
+
+        button = main.ids[button_id]
+
+        button.disabled = True
+
+        self.machine.blank()
+        self.machine.log(message)
+
+    def paste_pressed(self):
+
+        url = Clipboard.paste().strip()
+
+        if not url:
+            self.machine.blank()
+            self.machine.log("Clipboard is empty.")
+            return
+
+        self.current_playlist_url = url
+
+        self.machine.major("Custom playlist selected.")
         self.machine.log("Analyzing playlist...")
 
         self.set_button_state("idle")

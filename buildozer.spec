@@ -34,15 +34,15 @@ source.include_patterns = assets/*
 source.exclude_patterns = .vscode/*
 
 # (str) Application versioning (method 1)
-version = 0.9
+# version = 0.0.0
 
 # (str) Application versioning (method 2)
-# version.regex = __version__ = ['"](.*)['"]
-# version.filename = %(source.dir)s/main.py
+version.regex = __version__ = ['"](.*)['"]
+version.filename = %(source.dir)s/main.py
 
 # (list) Application requirements
 # comma separated e.g. requirements = sqlite3,kivy
-requirements = python3,kivy,yt-dlp,mutagen,nodejs-wheel-binaries
+requirements = python3,kivy,yt-dlp,mutagen,nodejs-wheel-binaries,certifi
 
 # (str) Custom source folders for requirements
 # Sets custom source for any requirements with recipes
@@ -103,7 +103,7 @@ icon.adaptive_background.filename = assets/icon-bg.png
 
 # (list) Permissions
 # (See https://python-for-android.readthedocs.io/en/latest/buildoptions.html for all the supported syntaxes and properties)
-android.permissions = android.permission.INTERNET
+android.permissions = INTERNET,MANAGE_EXTERNAL_STORAGE
 
 # (list) features (adds uses-feature -tags to manifest)
 #android.features = android.hardware.usb.host
@@ -206,7 +206,7 @@ android.permissions = android.permission.INTERNET
 # 3) A directory, here 'legal_resources' must contain one or more directories, 
 # each of a resource kind:  drawable, xml, etc...
 # android.add_resources = legal_resources
-#android.add_resources =
+#android.add_resources = android/res
 
 # (list) Gradle dependencies to add
 #android.gradle_dependencies =
@@ -278,7 +278,7 @@ android.permissions = android.permission.INTERNET
 #android.uses_library =
 
 # (str) Android logcat filters to use
-#android.logcat_filters = *:S python:D
+android.logcat_filters = *:S PythonActivity:V python:V SDL:V AndroidRuntime:E
 
 # (bool) Android logcat only display log for activity's pid
 #android.logcat_pid_only = False

@@ -1,16 +1,25 @@
 from pathlib import Path
-from urllib.parse import urlparse, parse_qs
-import csv
-import re
-import textwrap
-import yt_dlp
-from mutagen.oggopus import OggOpus
-
 import sys
 
 sys.path.insert(0, str(Path(__file__).parent / "vendor"))
 
+from urllib.parse import urlparse, parse_qs
+import csv
+from datetime import datetime
+import re
+import textwrap
+import yt_dlp
+from mutagen.oggopus import OggOpus
 from pytubefix import Playlist
+
+import ssl
+import certifi
+
+ssl._create_default_https_context = lambda: ssl.create_default_context(
+    cafile=certifi.where()
+)
+
+from kivy.utils import platform
 
 LAYER_NAMES = {
     1: "Dollop",
@@ -71,9 +80,6 @@ class PathStorage:
     def rename(self, src, dst):
         src.rename(dst)
 
-    def mkdir(self, path, **kwargs):
-        path.mkdir(**kwargs)
-
     def unlink(self, path):
         path.unlink()
 
@@ -90,52 +96,22 @@ class PathStorage:
         return self.root.joinpath(*parts)
 
     def ffmpeg_location(self):
+        if platform == "android":
+            return str(
+                Path(__file__).resolve().parent
+                / "ffmpeg"
+                / "android"
+            )
+
         return str(
-            Path(__file__).resolve().parent 
-            / "ffmpeg" 
+            Path(__file__).resolve().parent
+            / "ffmpeg"
             / "windows"
         )
-
-class SAFStorage:
-
-    def __init__(self, tree_uri):
-        pass
-
-    def file(self, *parts):
-        pass
-
-    def open_path(self, path, mode="r", **kwargs):
-        pass
-
-    def exists(self, path):
-        pass
-
-    def glob(self, pattern):
-        pass
-
-    def rename(self, src, dst):
-        pass
-
-    def unlink(self, path):
-        pass
-
-    def mkdir(self, path, **kwargs):
-        pass
-
-    def read_text(self, path, encoding="utf-8"):
-        pass
-
-    def write_text(self, path, text, encoding="utf-8"):
-        pass
-
-    def ffmpeg_location(self):
-        pass
-
 
 class LibraryMachine:
 
     def __init__(self, library_path, log_callback=None, progress_callback=None):
-        self.app_path = Path(__file__).resolve().parent.parent
 
         if isinstance(library_path, PathStorage):
             self.storage = library_path
@@ -143,13 +119,15 @@ class LibraryMachine:
             self.storage = PathStorage(library_path)
         self.library_path = self.storage.root
 
-        self.master_csv = self.app_path / "music_database.csv"
+        self.master_csv = self.storage.file("music_database.csv")
 
         self.log = log_callback or (lambda msg="": None)
         self.progress = progress_callback or (lambda c, t: None)
 
         self.hrr = "================================"
         self.hr = "---------------------------"
+
+    #
 
     def hyphenate_long_words(self, text, available):
 
@@ -225,6 +203,8 @@ class LibraryMachine:
     def blank(self):
         self.log("")
 
+    #
+
     def normalize_playlist_url(self, url):
         if "list=" not in url:
             return url
@@ -270,6 +250,7 @@ class LibraryMachine:
 
                 writer.writerow(
                     [
+                        "date_added",
                         "video_url",
                         "title",
                         "artist",
@@ -378,6 +359,7 @@ class LibraryMachine:
 
                 writer.writerow(
                     [
+                        datetime.now().strftime("%Y-%m-%d"),
                         row["video_url"],
                         row["title"],
                         row["artist"],
@@ -402,6 +384,7 @@ class LibraryMachine:
             reader = csv.DictReader(f)
 
             required = [
+                "date_added",
                 "video_url",
                 "title",
                 "artist",
@@ -410,10 +393,15 @@ class LibraryMachine:
                 "downloaded",
             ]
 
-            if reader.fieldnames != required:
+            if reader.fieldnames is None:
+                self.blank()
+                self.log("CSV is empty.")
+                return None
+
+            if reader.fieldnames[:len(required)] != required:
                 self.blank()
                 self.log("CSV headers are incorrect.")
-                self.log("Expected:\n" + ", ".join(required))
+                self.log("Expected first columns:\n" + ", ".join(required))
                 return None
 
             for row_num, row in enumerate(reader, start=2):
@@ -421,7 +409,14 @@ class LibraryMachine:
                 cleaned_row = {}
 
                 for key, value in row.items():
+
+                    if value is None:
+                        value = ""
+
                     cleaned_row[key] = value.strip()
+
+                if not cleaned_row["date_added"]:
+                    cleaned_row["date_added"] = "Unknown"
 
                 if not cleaned_row["video_url"]:
                     errors.append(f"Row {row_num}: Video URL is blank.")
@@ -432,14 +427,13 @@ class LibraryMachine:
                 if not cleaned_row["genre"]:
                     errors.append(f"Row {row_num}: Genre is blank.")
 
-                if cleaned_row["layer"] not in (
+                if cleaned_row["layer"] and cleaned_row["layer"] not in (
                     "1",
                     "2",
                     "3",
                     "4",
                 ):
-                    errors.append(f"Row {row_num}: Layer must be 1-4.")
-
+                    errors.append(f"Row {row_num}: Layer must be blank or 1-4.")
                 if cleaned_row["downloaded"] not in (
                     "YES",
                     "NO",
@@ -459,6 +453,73 @@ class LibraryMachine:
 
         return rows
 
+    def write_csv(self, rows):
+
+        if not rows:
+            return
+
+        temp_csv = self.storage.file("music_database.csv.tmp")
+
+        with self.storage.open_path(
+            temp_csv,
+            "w",
+            encoding="utf-8-sig",
+            newline="",
+        ) as f:
+
+            writer = csv.writer(f)
+
+            fixed = [
+                "date_added",
+                "video_url",
+                "title",
+                "artist",
+                "layer",
+                "genre",
+                "downloaded",
+            ]
+
+            headers = fixed[:]
+
+            for column in rows[0]:
+
+                if column not in fixed:
+                    headers.append(column)
+
+            writer.writerow(headers)
+
+            fixed = [
+                "date_added",
+                "video_url",
+                "title",
+                "artist",
+                "layer",
+                "genre",
+                "downloaded",
+            ]
+
+            for row in rows:
+
+                values = []
+
+                for column in fixed:
+                    values.append(row.get(column, ""))
+
+                for column in row:
+
+                    if column not in fixed:
+                        values.append(row[column])
+
+                writer.writerow(values)
+
+        if self.storage.exists(self.master_csv):
+            self.storage.unlink(self.master_csv)
+
+        self.storage.rename(
+            temp_csv,
+            self.master_csv,
+        )
+
     def safe_filename(self, name):
         return re.sub(r'[<>:"/\\|?*]', "_", name).strip()
 
@@ -467,7 +528,10 @@ class LibraryMachine:
 
         audio["title"] = [row["title"]]
         audio["artist"] = [row["artist"]]
-        audio["album"] = [LAYER_NAMES[int(row["layer"])]]
+        if row["layer"]:
+            audio["album"] = [LAYER_NAMES[int(row["layer"])]]
+        else:
+            audio["album"] = ["Blank"]
         audio["genre"] = [row["genre"]]
         audio["comment"] = [row["video_url"]]
 
@@ -600,33 +664,7 @@ class LibraryMachine:
 
                 self.log(f"    {item['error']}")
 
-        with self.storage.open_path(self.master_csv, "w", encoding="utf-8-sig", newline="") as f:
-
-            writer = csv.writer(f)
-
-            writer.writerow(
-                [
-                    "video_url",
-                    "title",
-                    "artist",
-                    "layer",
-                    "genre",
-                    "downloaded",
-                ]
-            )
-
-            for row in rows:
-
-                writer.writerow(
-                    [
-                        row["video_url"],
-                        row["title"],
-                        row["artist"],
-                        row["layer"],
-                        row["genre"],
-                        row["downloaded"],
-                    ]
-                )
+        self.write_csv(rows)
 
         self.progress(0, 1)
 
@@ -669,6 +707,9 @@ class LibraryMachine:
             for row in rows:
 
                 if row["downloaded"] != "YES":
+                    continue
+
+                if not row["layer"]:
                     continue
 
                 filename = (
@@ -802,7 +843,11 @@ class LibraryMachine:
                     needs_tag = (
                         audio.get("title", [""])[0] != row["title"]
                         or audio.get("artist", [""])[0] != row["artist"]
-                        or audio.get("album", [""])[0] != LAYER_NAMES[int(row["layer"])]
+                        or (
+                            row["layer"]
+                            and audio.get("album", [""])[0]
+                            != LAYER_NAMES[int(row["layer"])]
+                        )
                         or audio.get("genre", [""])[0] != row["genre"]
                         or audio.get("comment", [""])[0] != row["video_url"]
                     )
@@ -869,38 +914,7 @@ class LibraryMachine:
             url_to_file,
         )
 
-        with self.storage.open_path(
-            self.master_csv,
-            "w",
-            encoding="utf-8-sig",
-            newline="",
-        ) as f:
-
-            writer = csv.writer(f)
-
-            writer.writerow(
-                [
-                    "video_url",
-                    "title",
-                    "artist",
-                    "layer",
-                    "genre",
-                    "downloaded",
-                ]
-            )
-
-            for row in rows:
-
-                writer.writerow(
-                    [
-                        row["video_url"],
-                        row["title"],
-                        row["artist"],
-                        row["layer"],
-                        row["genre"],
-                        row["downloaded"],
-                    ]
-                )
+        self.write_csv(rows)
 
         self.build_playlists()
 
@@ -952,7 +966,7 @@ class LibraryMachine:
         self.blank()
         self.log("Finished.")
 
-    def analyze_playlist(self, url):
+    def analyze_playlist(self, url, layer=""):
 
         url = self.normalize_playlist_url(url)
 
@@ -971,7 +985,8 @@ class LibraryMachine:
                 return {"status": "up_to_date"}
 
             analysis_data, missing_entries = self.analyze_entries(
-                new_entries
+                new_entries,
+                layer,
             )
 
             if missing_entries:
