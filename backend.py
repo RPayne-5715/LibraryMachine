@@ -28,13 +28,6 @@ LAYER_NAMES = {
     4: "For Dakota ig",
 }
 
-PLAYLIST_URLS = {
-    1: "https://music.youtube.com/playlist?list=PLb4_zdQ6SjIB7NW7YYprjrTgBwCzbA38q",
-    2: "https://music.youtube.com/playlist?list=PLb4_zdQ6SjIApWHLrRZ3QXFmlUD3_mmKm",
-    3: "https://music.youtube.com/playlist?list=PLb4_zdQ6SjID2jMAqjdZhf3KEws3Xw1HI",
-    4: "https://music.youtube.com/playlist?list=PLb4_zdQ6SjIAd8zgUu_VKpwGAPaO0iNnW",
-}
-
 class SilentLogger:
     def debug(self, msg):
         pass
@@ -68,9 +61,6 @@ class PathStorage:
     def __init__(self, root):
         self.root = Path(root)
 
-    def path(self, *parts):
-        return self.root.joinpath(*parts)
-
     def glob(self, pattern):
         return self.root.glob(pattern)
 
@@ -82,12 +72,6 @@ class PathStorage:
 
     def unlink(self, path):
         path.unlink()
-
-    def read_text(self, path, encoding="utf-8"):
-        return path.read_text(encoding=encoding)
-
-    def write_text(self, path, text, encoding="utf-8"):
-        path.write_text(text, encoding=encoding)
 
     def open_path(self, path, mode="r", **kwargs):
         return path.open(mode, **kwargs)

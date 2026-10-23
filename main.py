@@ -4,16 +4,14 @@ from kivy.clock import Clock
 from kivy.core.image import Image as CoreImage
 from kivy.core.text import LabelBase
 from kivy.core.window import Window
-from kivy.lang import Builder
 from kivy.properties import NumericProperty, StringProperty, BooleanProperty
 from kivy.storage.jsonstore import JsonStore
-from kivy.uix.label import Label
 from kivy.uix.screenmanager import ScreenManager, FadeTransition, Screen
 from kivy.uix.widget import Widget
 from kivy.utils import platform
 from kivy.core.clipboard import Clipboard
 
-from backend import LibraryMachine, PathStorage, PLAYLIST_URLS
+from backend import LibraryMachine, PathStorage
 from pathlib import Path
 from datetime import datetime
 from threading import Thread
@@ -24,8 +22,6 @@ LIBRARY_FOLDER_NAME = "PlaylistLibrary"
 FOLDER_REQUEST = 2001
 
 __version__ = "0.20"
-
-spec = Path(__file__).with_name("buildozer.spec")
 
 if platform == "android":
     from jnius import autoclass
@@ -40,8 +36,6 @@ if platform == "android":
 
     LIBRARY_ROOT = Path("/storage/emulated/0/Music")
 
-    DocumentsContract = autoclass("android.provider.DocumentsContract")
-
 else:
     Window.size = (412, 750)
     # 412, 915
@@ -53,7 +47,6 @@ gradient = CoreImage("assets/progress_gradient.png").texture
 gradient.wrap = "clamp_to_edge"
 gradient.mag_filter = "linear"
 gradient.min_filter = "linear"
-current_label = None
 CONSOLE_PADDING = 19
 Window.clearcolor = (
     0x1C / 255,
@@ -214,9 +207,9 @@ class LibraryMachineApp(App):
 
         self.finish_loading(0)
 
-        def on_stop(self):
-            if platform == "android":
-                activity.unbind(on_activity_result=self.activity_result)
+    def on_stop(self):
+        if platform == "android":
+            activity.unbind(on_activity_result=self.activity_result)
 
     def finish_loading(self, dt):
 
@@ -368,122 +361,39 @@ class LibraryMachineApp(App):
 
     #
 
-    def activity_result(
-        self,
-        request_code,
-        result_code,
-        intent,
-    ):
-
-        self.machine.log("activity_result()")
-
+    def activity_result(self, request_code, result_code, intent):
         if request_code != FOLDER_REQUEST:
             return
 
-        if intent is None:
+        if result_code != -1 or intent is None:  # RESULT_OK
             return
 
         uri = intent.getData()
-
         if uri is None:
             return
 
-        self.folder_uri = uri
-
-        self.machine.log(uri.toString())
-
-        self.store.put(
-            "folder",
-            uri=uri.toString(),
-        )
-
-        self.machine.log("Folder saved.")
-
-        activity = PythonActivity.mActivity
-
-        flags = (
-            Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-        )
-
-        activity.getContentResolver().takePersistableUriPermission(
-            uri,
-            flags,
-        )
-
-    #
-
-    def folder_pressed(self):
-
-        if platform != "android":
-            import os
-
-            os.startfile(LIBRARY_PATH)
-            return
-
         android_activity = PythonActivity.mActivity
 
-        if self.folder_uri is None:
-
-            intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
-
-            android_activity.startActivityForResult(
-                intent,
-                FOLDER_REQUEST,
-            )
-
-            return
-
-        intent = Intent(Intent.ACTION_VIEW)
-
-        intent.setDataAndType(
-            self.folder_uri,
-            DocumentsContract.Document.MIME_TYPE_DIR,
+        flags = intent.getFlags() & (
+            Intent.FLAG_GRANT_READ_URI_PERMISSION
+            | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
         )
-
-        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
 
         try:
-            android_activity.startActivity(intent)
-        except Exception:
-            self.disable_button(
-                "folder_button",
-                "Unable to open Google Files."
+            android_activity.getContentResolver().takePersistableUriPermission(
+                uri, flags
             )
-
-    def player_pressed(self):
-
-        if platform != "android":
-            self.machine.blank()
-            self.machine.log("Android only.")
+        except Exception as e:
+            self.machine.log(f"Could not retain folder permission: {e}")
             return
 
-        Intent = autoclass("android.content.Intent")
-        ComponentName = autoclass("android.content.ComponentName")
+        self.folder_uri = uri
+        self.store.put("folder", uri=uri.toString())
 
-        android_activity = PythonActivity.mActivity
+        self.machine.log("Folder saved.")
+        self.machine.log(uri.toString())
 
-        intent = Intent()
-
-        intent.setComponent(
-            ComponentName(
-                "com.maxmpz.audioplayer",
-                "com.maxmpz.audioplayer.MainActivity",
-            )
-        )
-
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-
-        if intent:
-            try:
-                android_activity.startActivity(intent)
-            except Exception:
-                self.disable_button(
-                    "player_button",
-                    "Poweramp not installed."
-                )
-        else:
-            log("Poweramp is not installed.")
+    #
 
     def csv_pressed(self):
 
@@ -523,41 +433,10 @@ class LibraryMachineApp(App):
             daemon=True,
         ).start()
 
-    def sync_yt_pressed(self):
-        self.machine.major("Not Yet Implemented")
-
-    def pull_csv_pressed(self):
-        self.machine.major("Not Yet Implemented")
-
-    def playlist_pressed(self, playlist):
-
-        if playlist == 5:
-
-            self.machine.major("Paste your custom YouTube URL.")
-
-            self.current_playlist_url = None
-            self.set_button_state("paste")
-            return
-
-        self.current_playlist_url = PLAYLIST_URLS[playlist]
-        self.current_layer = playlist
-
-        names = {
-            1: "Dollop",
-            2: "Peer",
-            3: "PeerJ",
-            4: "For Dakota ig",
-        }
-
-        self.machine.major(f"{names[playlist]} selected.")
-        self.machine.log("Analyzing playlist...")
-
-        self.set_button_state("idle")
-
-        Thread(
-            target=self.analyze_playlist_thread,
-            daemon=True,
-        ).start()
+    def playlist_pressed(self):
+        self.machine.major("Paste your YouTube playlist URL.")
+        self.current_playlist_url = None
+        self.set_button_state("paste")
 
     def disable_button(self, button_id, message):
 

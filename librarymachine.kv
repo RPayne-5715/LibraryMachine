@@ -133,42 +133,24 @@
 
         BoxLayout:
             size_hint_y: None
-            height: "50dp"
-            spacing: "13dp"
-
-            GnButton:
-                id: folder_button
-                text: "Folder"
-                on_release: app.folder_pressed()
-
-            GnButton:
-                id: player_button
-                text: "Player"
-                on_release: app.player_pressed()
-
-            GnButton:
-                id: csv_button
-                text: "CSV"
-                on_release: app.csv_pressed()
-        BoxLayout:
-            size_hint_y: None
             height: "53dp"
             spacing: "14dp"
 
-            TButton:
+            GnButton:
                 text: "Sync CSV"
                 on_release: app.sync_csv_pressed()
 
-            TButton:
-                text: "Pull CSV"
-                on_release: app.pull_csv_pressed()
+            GnButton:
+                id: csv_button
+                text: "Open CSV"
+                on_release: app.csv_pressed()
         BoxLayout:
             size_hint_y: None
             height: "43dp"
 
             TBButton:
-                text: "Sync YT"
-                on_release: app.sync_yt_pressed()
+                text: "Playlist"
+                on_release: app.playlist_pressed()
         Widget:
             size_hint_y: None
             height: "5dp"
@@ -180,34 +162,6 @@
                 Rectangle:
                     pos: self.x, self.center_y - dp(0.9)
                     size: self.width, dp(1.5)
-        BoxLayout:
-            size_hint_y: None
-            height: "43dp"
-
-            BButton:
-                text: "Custom Playlist"
-                on_release: app.playlist_pressed(5)
-
-        BoxLayout:
-            size_hint_y: None
-            height: "43dp"
-            spacing: "11dp"
-
-            PButton:
-                text: "Dollop"
-                on_release: app.playlist_pressed(1)
-
-            PButton:
-                text: "Peer"
-                on_release: app.playlist_pressed(2)
-
-            PButton:
-                text: "PeerJ"
-                on_release: app.playlist_pressed(3)
-
-            PButton:
-                text: "Dakota"
-                on_release: app.playlist_pressed(4)
 
         BoxLayout:
             orientation: "vertical"
