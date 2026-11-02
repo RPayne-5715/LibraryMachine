@@ -4,6 +4,7 @@
 #:import StencilUnUse kivy.graphics.StencilUnUse
 #:import StencilPop kivy.graphics.StencilPop
 
+#button classes
 <GnButton@Button>:
     background_normal: ""
     background_down: ""
@@ -103,6 +104,7 @@
             radius: [dp(22)]
 
 
+#splash screen
 <SplashScreen>:
     FloatLayout:
 
@@ -117,6 +119,7 @@
             source: "assets/presplash.png"
             fit_mode: "contain"
             size_hint: 1, 1
+#main screen
 <MainScreen>:
 
     BoxLayout:
@@ -151,6 +154,7 @@
             TBButton:
                 text: "Playlist"
                 on_release: app.playlist_pressed()
+    # divider    
         Widget:
             size_hint_y: None
             height: "5dp"
@@ -162,7 +166,7 @@
                 Rectangle:
                     pos: self.x, self.center_y - dp(0.9)
                     size: self.width, dp(1.5)
-
+    # progress bars
         BoxLayout:
             orientation: "vertical"
             canvas.before:
@@ -274,6 +278,7 @@
                 Rectangle:
                     pos: self.x, self.center_y - dp(0.9)
                     size: self.width, dp(1.5)
+    # grey buttons
         FloatLayout:
             size_hint_y: None
             height: "81dp"
@@ -304,6 +309,13 @@
                 GButton:
                     text: "Continue"
                     on_release: app.continue_pressed()
+            BoxLayout:
+                id: abort_buttons
+                pos_hint: {"x": 0, "y": 0}
+
+                GButton:
+                    text: "Abort Process"
+                    on_release: app.abort_pressed()
             BoxLayout:
                 id: idle_buttons
                 pos_hint: {"x": 0, "y": 0}

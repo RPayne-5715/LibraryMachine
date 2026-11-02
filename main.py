@@ -17,7 +17,12 @@ from datetime import datetime
 from threading import Thread
 import traceback
 
-LIBRARY_FOLDER_NAME = "PlaylistLibrary"
+# CHANGE LOCATIONS
+LIBRARY_PATH = (
+    Path("/storage/emulated/0/Music/PlaylistLibrary")
+    if platform == "android"
+    else Path.home() / "Documents" / "PlaylistLibrary"
+)
 
 FOLDER_REQUEST = 2001
 
@@ -34,14 +39,9 @@ if platform == "android":
     Environment = autoclass("android.os.Environment")
     Settings = autoclass("android.provider.Settings")
 
-    LIBRARY_ROOT = Path("/storage/emulated/0/Music")
-
 else:
     Window.size = (412, 750)
     # 412, 915
-    LIBRARY_ROOT = Path(__file__).resolve().parent.parent.parent
-
-LIBRARY_PATH = LIBRARY_ROOT / LIBRARY_FOLDER_NAME
 
 gradient = CoreImage("assets/progress_gradient.png").texture
 gradient.wrap = "clamp_to_edge"
@@ -288,6 +288,7 @@ class LibraryMachineApp(App):
             "yesno": main.ids.yesno_buttons,
             "continue": main.ids.continue_buttons,
             "idle": main.ids.idle_buttons,
+            "abort": main.ids.abort_buttons,
         }
 
         for layout in layouts.values():
@@ -359,6 +360,12 @@ class LibraryMachineApp(App):
 
         self.pending_action = None
 
+    def abort_pressed(self):
+        # Cancellation will be implemented here.
+        pass
+
+        
+
     #
 
     def activity_result(self, request_code, result_code, intent):
@@ -384,6 +391,7 @@ class LibraryMachineApp(App):
                 uri, flags
             )
         except Exception as e:
+            traceback.print_exc()
             self.machine.log(f"Could not retain folder permission: {e}")
             return
 
@@ -494,7 +502,13 @@ class LibraryMachineApp(App):
 
     def sync_csv_thread(self):
 
-        result = self.machine.csv_sync(False, True,)
+        try:
+            result = self.machine.csv_sync(False, True,)
+
+        except Exception as e:
+            traceback.print_exc()
+            self.machine.log(f"CSV sync failed: {e}")
+            return
 
         Clock.schedule_once(
             lambda dt: self.handle_sync_csv_result(result),

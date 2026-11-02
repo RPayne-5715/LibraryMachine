@@ -11,6 +11,10 @@ import textwrap
 import yt_dlp
 from mutagen.oggopus import OggOpus
 from pytubefix import Playlist
+from kivy.utils import platform
+import traceback
+from threading import Timer, Event
+from time import monotonic
 
 import ssl
 import certifi
@@ -19,7 +23,6 @@ ssl._create_default_https_context = lambda: ssl.create_default_context(
     cafile=certifi.where()
 )
 
-from kivy.utils import platform
 
 LAYER_NAMES = {
     1: "Dollop",
@@ -33,13 +36,15 @@ class SilentLogger:
         pass
 
     def warning(self, msg):
-        pass
+        if "No supported JavaScript runtime could be found" in msg:
+            return
+        print(msg, flush=True)
 
     def error(self, msg):
-        pass
+        print(msg, flush=True)
+
 
 class DownloadLogger:
-
     def __init__(self, log):
         self.last_error = None
         self.log = log
@@ -50,10 +55,10 @@ class DownloadLogger:
     def warning(self, msg):
         if "No supported JavaScript runtime could be found" in msg:
             return
-
-        self.log(f"WARNING: {msg}")
+        print(msg, flush=True)
 
     def error(self, msg):
+        print(msg, flush=True)
         self.last_error = msg
 
 class PathStorage:
@@ -320,6 +325,7 @@ class LibraryMachine:
                         )
 
                     except Exception as e:
+                        traceback.print_exc()
 
                         missing_entries.append(
                             {
@@ -363,8 +369,20 @@ class LibraryMachine:
         rows = []
         errors = []
 
-        with self.storage.open_path(self.master_csv, "r", encoding="utf-8-sig", newline="") as f:
+        try:
+            f = self.storage.open_path(
+                self.master_csv, "r", encoding="utf-8-sig", newline=""
+            )
+        except FileNotFoundError:
+            traceback.print_exc()
+            self.blank()
+            if platform == "win":
+                self.log("Windows path error. See terminal for details")
+            else:
+                self.log("Android path error. See ADB for details")
+            return None
 
+        with f:
             reader = csv.DictReader(f)
 
             required = [
@@ -389,11 +407,9 @@ class LibraryMachine:
                 return None
 
             for row_num, row in enumerate(reader, start=2):
-
                 cleaned_row = {}
 
                 for key, value in row.items():
-
                     if value is None:
                         value = ""
 
@@ -418,6 +434,7 @@ class LibraryMachine:
                     "4",
                 ):
                     errors.append(f"Row {row_num}: Layer must be blank or 1-4.")
+
                 if cleaned_row["downloaded"] not in (
                     "YES",
                     "NO",
@@ -427,7 +444,6 @@ class LibraryMachine:
                 rows.append(cleaned_row)
 
         if errors:
-
             self.report("CSV Validation Errors")
 
             for error in errors:
@@ -561,6 +577,8 @@ class LibraryMachine:
             )
 
         except Exception as e:
+            if not isinstance(e, yt_dlp.utils.DownloadError):
+                traceback.print_exc()
             return (
                 "FAILED",
                 logger.last_error or str(e),
@@ -727,6 +745,8 @@ class LibraryMachine:
         duplicates_removed = 0
         deleted_titles = []
 
+        valid_urls = {row["video_url"] for row in rows if row["video_url"]}
+
         for file in self.storage.glob("*.opus"):
 
             try:
@@ -734,6 +754,12 @@ class LibraryMachine:
                 audio = OggOpus(file)
 
                 url = audio.get("comment", [""])[0]
+
+                if url not in valid_urls:
+                    self.storage.unlink(file)
+                    duplicates_removed += 1
+                    deleted_titles.append(file.stem)
+                    continue
 
                 if url:
 
@@ -852,6 +878,7 @@ class LibraryMachine:
                             url_to_file[row["video_url"]] = expected_path
 
                 except Exception as e:
+                    traceback.print_exc()
 
                     self.log(
                         f"Failed to synchronize:\n"
@@ -866,7 +893,30 @@ class LibraryMachine:
 
     def csv_sync(self, download_first, prompt_if_missing=True):
 
-        rows = self.read_csv()
+        read_started = monotonic()
+        print(f"SYNC: running {__file__}", flush=True)
+
+        def reading_notice_callback():
+            elapsed = monotonic() - read_started
+            print(f"SYNC: timer fired at {elapsed:.3f}s", flush=True)
+            self.log("Reading CSV...")
+            print("SYNC: reading message queued", flush=True)
+
+        reading_notice = Timer(3.0, reading_notice_callback)
+        reading_notice.daemon = True
+        reading_notice.start()
+
+        try:
+            rows = self.read_csv()
+        finally:
+            elapsed = monotonic() - read_started
+            print(f"SYNC: cancelling timer at {elapsed:.3f}s", flush=True)
+            reading_notice.cancel()
+
+        if elapsed > 3.0:
+            self.log("CSV Read Complete.")
+
+        print(f"SYNC: CSV returned None: {rows is None}", flush=True)
 
         if rows is None:
             return
@@ -1004,6 +1054,7 @@ class LibraryMachine:
             return {"status": "csv_ready"}
 
         except Exception as e:
+            traceback.print_exc()
 
             self.log(f"\nError: {e}")
 
