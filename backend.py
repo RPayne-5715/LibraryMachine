@@ -43,7 +43,6 @@ class SilentLogger:
     def error(self, msg):
         print(msg, flush=True)
 
-
 class DownloadLogger:
     def __init__(self, log):
         self.last_error = None
@@ -894,7 +893,6 @@ class LibraryMachine:
     def csv_sync(self, download_first, prompt_if_missing=True):
 
         read_started = monotonic()
-        print(f"SYNC: running {__file__}", flush=True)
 
         def reading_notice_callback():
             elapsed = monotonic() - read_started
@@ -915,8 +913,6 @@ class LibraryMachine:
 
         if elapsed > 3.0:
             self.log("CSV Read Complete.")
-
-        print(f"SYNC: CSV returned None: {rows is None}", flush=True)
 
         if rows is None:
             return

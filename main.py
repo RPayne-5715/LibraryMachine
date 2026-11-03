@@ -21,12 +21,12 @@ import traceback
 LIBRARY_PATH = (
     Path("/storage/emulated/0/Music/PlaylistLibrary")
     if platform == "android"
-    else Path.home() / "Documents" / "PlaylistLibrary"
+    else Path.home() / "Music" / "PlaylistLibrary"
 )
 
 FOLDER_REQUEST = 2001
 
-__version__ = "0.20"
+__version__ = "0.21"
 
 if platform == "android":
     from jnius import autoclass

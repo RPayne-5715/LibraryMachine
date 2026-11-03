@@ -53,7 +53,7 @@ date_added,video_url,title,artist,layer,genre,downloaded
 
 | Column | Entry | What it's for |
 | --- | --- | --- |
-| `date_added` | Automatic | Date imported, formatted as `YYYY-MM-DD`. Blank values are read as `Unknown`. |
+| `date_added` | Automatic | For information's sake only. Date imported, formatted as `YYYY-MM-DD`. Blank values are read as `Unknown`. |
 | `video_url` | Required | Source URL. Also stored in the audio comment tag so the app can identify the file. |
 | `title` | Track title | Used for the title tag and filename. |
 | `artist` | Required | Used for the artist tag and filename. |
