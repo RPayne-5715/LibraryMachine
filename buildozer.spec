@@ -42,7 +42,7 @@ version.filename = %(source.dir)s/main.py
 
 # (list) Application requirements
 # comma separated e.g. requirements = sqlite3,kivy
-requirements = python3,kivy,yt-dlp,mutagen,nodejs-wheel-binaries,certifi
+requirements = python3,kivy,yt-dlp==2026.10.26,yt-dlp-ejs==0.8.0,mutagen,nodejs-wheel-binaries,certifi==2026.10.23
 
 # (str) Custom source folders for requirements
 # Sets custom source for any requirements with recipes

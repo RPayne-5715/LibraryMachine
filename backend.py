@@ -49,7 +49,7 @@ class DownloadLogger:
         self.log = log
 
     def debug(self, msg):
-        pass
+        print(msg, flush=True)
 
     def warning(self, msg):
         if "No supported JavaScript runtime could be found" in msg:
@@ -285,10 +285,12 @@ class LibraryMachine:
             missing_entries = []
 
             ydl_opts = {
+                "verbose": False,
                 "quiet": True,
                 "no_warnings": True,
                 "ignoreerrors": True,
                 "logger": SilentLogger(),
+                
             }
 
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -550,6 +552,9 @@ class LibraryMachine:
             "outtmpl": str(self.storage.file(f"{filename}.%(ext)s")),
             "logger": logger,
             "writethumbnail": True,
+            "js_runtimes": {
+                "node": {},
+            },
             "postprocessors": [
                 {
                     "key": "FFmpegExtractAudio",
