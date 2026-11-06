@@ -19,29 +19,38 @@ from time import monotonic
 import ssl
 import certifi
 
+import json
+import math
+import subprocess
+
+from contextlib import ExitStack
+
 ssl._create_default_https_context = lambda: ssl.create_default_context(
     cafile=certifi.where()
 )
 
+ADB_REPORT_MODE = False
 
-LAYER_NAMES = {
-    1: "Dollop",
-    2: "Peer",
-    3: "PeerJ",
-    4: "For Dakota ig",
-}
+NORMALIZATION_TARGET_LUFS = -23.0
+NORMALIZATION_MIN_GAIN_DB = -12.0
+NORMALIZATION_MAX_GAIN_DB = 3.0
+NORMALIZATION_PEAK_DBTP = -1.0
+POWERAMP_GAIN_OFFSET_DB = 5.0
 
 class SilentLogger:
     def debug(self, msg):
-        pass
+        if ADB_REPORT_MODE:
+            print(msg, flush=True)
 
     def warning(self, msg):
         if "No supported JavaScript runtime could be found" in msg:
             return
-        print(msg, flush=True)
+        if ADB_REPORT_MODE:
+            print(msg, flush=True)
 
     def error(self, msg):
-        print(msg, flush=True)
+        if ADB_REPORT_MODE:
+            print(msg, flush=True)
 
 class DownloadLogger:
     def __init__(self, log):
@@ -49,16 +58,17 @@ class DownloadLogger:
         self.log = log
 
     def debug(self, msg):
-        print(msg, flush=True)
+        if ADB_REPORT_MODE:
+            print(msg, flush=True)
 
     def warning(self, msg):
-        if "No supported JavaScript runtime could be found" in msg:
-            return
-        print(msg, flush=True)
+        if ADB_REPORT_MODE:
+            print(msg, flush=True)
 
     def error(self, msg):
-        print(msg, flush=True)
         self.last_error = msg
+        if ADB_REPORT_MODE:
+            print(msg, flush=True)
 
 class PathStorage:
 
@@ -85,11 +95,11 @@ class PathStorage:
 
     def ffmpeg_location(self):
         if platform == "android":
-            return str(
-                Path(__file__).resolve().parent
-                / "ffmpeg"
-                / "android"
-            )
+            from jnius import autoclass
+
+            activity = autoclass("org.kivy.android.PythonActivity").mActivity
+            native_dir = Path(activity.getApplicationInfo().nativeLibraryDir)
+            return str(native_dir / "libffmpeg.so")
 
         return str(
             Path(__file__).resolve().parent
@@ -99,13 +109,26 @@ class PathStorage:
 
 class LibraryMachine:
 
-    def __init__(self, library_path, log_callback=None, progress_callback=None):
+    def __init__(
+        self,
+        library_path,
+        log_callback=None,
+        progress_callback=None,
+        layer_settings_path=None,
+    ):
 
         if isinstance(library_path, PathStorage):
             self.storage = library_path
         else:
             self.storage = PathStorage(library_path)
         self.library_path = self.storage.root
+
+        if platform == "android":
+            from android_node import configure
+
+            self.js_runtimes = configure()
+        else:
+            self.js_runtimes = {"node": {}}
 
         self.master_csv = self.storage.file("music_database.csv")
 
@@ -114,6 +137,47 @@ class LibraryMachine:
 
         self.hrr = "================================"
         self.hr = "---------------------------"
+
+        if layer_settings_path is None:
+            raise ValueError("A writable layer settings path is required.")
+
+        self.layers_file = Path(layer_settings_path)
+        self.default_layer_names = self.read_default_layers()
+        self.layer_names = dict(self.default_layer_names)
+
+        # Historical filenames: used only to clean up old generated playlists.
+        self.layer_playlist_files = [
+            "Dollop.m3u8",
+            "Peer.m3u8",
+            "PeerJ.m3u8",
+            "For Dakota_ig.m3u8",
+        ]
+
+        if self.layers_file.exists():
+            settings = json.loads(
+                self.layers_file.read_text(encoding="utf-8")
+            )
+
+            self.layer_names.update({
+                int(layer): name
+                for layer, name in settings["names"].items()
+            })
+            self.layer_playlist_files = settings["playlist_files"]
+
+            if any(
+                not isinstance(name, str)
+                or "/" in name
+                or "\\" in name
+                or not name.endswith(".m3u8")
+                for name in self.layer_playlist_files
+            ):
+                raise ValueError("Invalid playlist filenames in layer settings")
+
+            if any(layer < 1 for layer in self.layer_names):
+                raise ValueError("Layer numbers must be positive")
+
+        self.validate_layer_names(self.layer_names)
+        self.ensure_layers(max(self.layer_names))
 
     #
 
@@ -285,12 +349,11 @@ class LibraryMachine:
             missing_entries = []
 
             ydl_opts = {
-                "verbose": False,
-                "quiet": True,
-                "no_warnings": True,
+                "verbose": ADB_REPORT_MODE,
+                "quiet": not ADB_REPORT_MODE,
+                "no_warnings": not ADB_REPORT_MODE,
                 "ignoreerrors": True,
                 "logger": SilentLogger(),
-                
             }
 
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -428,14 +491,19 @@ class LibraryMachine:
                 if not cleaned_row["genre"]:
                     errors.append(f"Row {row_num}: Genre is blank.")
 
-                if cleaned_row["layer"] and cleaned_row["layer"] not in (
-                    "1",
-                    "2",
-                    "3",
-                    "4",
-                ):
-                    errors.append(f"Row {row_num}: Layer must be blank or 1-4.")
+                layer_text = cleaned_row["layer"]
 
+                if layer_text:
+                    if (
+                        not re.fullmatch(r"[0-9]+", layer_text)
+                        or int(layer_text) < 1
+                    ):
+                        errors.append(
+                            f"Row {row_num}: Layer must be blank "
+                            "or a positive whole number."
+                        )
+                    else:
+                        cleaned_row["layer"] = str(int(layer_text))
                 if cleaned_row["downloaded"] not in (
                     "YES",
                     "NO",
@@ -451,6 +519,13 @@ class LibraryMachine:
                 self.log(error)
 
             return None
+
+        highest = max(
+            (int(row["layer"]) for row in rows if row["layer"]),
+            default=0,
+        )
+
+        self.ensure_layers(highest)
 
         return rows
 
@@ -524,19 +599,369 @@ class LibraryMachine:
     def safe_filename(self, name):
         return re.sub(r'[<>:"/\\|?*]', "_", name).strip()
 
+    def read_default_layers(self):
+        path = Path(__file__).resolve().parent / "layers.txt"
+        names = {}
+
+        lines = path.read_text(encoding="utf-8-sig").splitlines()
+
+        for line_number, line in enumerate(lines, start=1):
+            line = line.strip()
+
+            if not line or line.startswith("#"):
+                continue
+
+            number, separator, name = line.partition("=")
+            number = number.strip()
+            name = name.strip()
+
+            if (
+                not separator
+                or not re.fullmatch(r"[0-9]+", number)
+                or int(number) < 1
+            ):
+                raise ValueError(
+                    f"layers.txt line {line_number}: expected number=name"
+                )
+
+            layer = int(number)
+
+            if layer in names:
+                raise ValueError(
+                    f"layers.txt: layer {layer} appears more than once"
+                )
+
+            names[layer] = name
+
+        if not names:
+            raise ValueError("layers.txt must contain at least one layer")
+
+        self.validate_layer_names(names)
+        return names
+
+    def layer_playlist_filename(self, layer, name):
+        return self.safe_filename(name).rstrip(". ") + ".m3u8"
+
+    def validate_layer_names(self, names):
+        filenames = set()
+
+        reserved = {"CON", "PRN", "AUX", "NUL"}
+        reserved.update(
+            f"{prefix}{number}"
+            for prefix in ("COM", "LPT")
+            for number in range(1, 10)
+        )
+
+        for layer, name in names.items():
+            if (
+                not isinstance(name, str)
+                or not name
+                or any(ord(char) < 32 for char in name)
+            ):
+                raise ValueError(
+                    f"Layer {layer}: enter a nonempty, single-line name."
+                )
+
+            stem = self.safe_filename(name).rstrip(". ")
+
+            if not stem or stem.split(".")[0].upper() in reserved:
+                raise ValueError(
+                    f"Layer {layer}: this name cannot be used as a filename."
+                )
+
+            filename = self.layer_playlist_filename(layer, name).casefold()
+
+            if filename in filenames:
+                raise ValueError(
+                    "Each layer needs a different playlist filename."
+                )
+
+            filenames.add(filename)
+
+    def save_layers(self):
+        self.layers_file.parent.mkdir(parents=True, exist_ok=True)
+        temporary = self.layers_file.with_suffix(".json.tmp")
+
+        # Save only renamed layers and layers absent from the bundled defaults.
+        overrides = {
+            layer: name
+            for layer, name in self.layer_names.items()
+            if self.default_layer_names.get(layer) != name
+        }
+
+        temporary.write_text(
+            json.dumps(
+                {
+                    "names": overrides,
+                    "playlist_files": self.layer_playlist_files,
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        temporary.replace(self.layers_file)
+
+    def ensure_layers(self, highest):
+        names = dict(self.layer_names)
+
+        for layer in range(1, highest + 1):
+            if layer in names:
+                continue
+
+            name = f"Layer {layer}"
+
+            used = {
+                self.layer_playlist_filename(number, value).casefold()
+                for number, value in names.items()
+            }
+
+            while self.layer_playlist_filename(layer, name).casefold() in used:
+                name += "_"
+
+            names[layer] = name
+
+        if names != self.layer_names:
+            self.validate_layer_names(names)
+
+            previous = self.layer_names
+            self.layer_names = names
+
+            try:
+                self.save_layers()
+            except Exception:
+                self.layer_names = previous
+                raise
+
+    def rename_layers(self, names):
+        names = {
+            layer: name.strip()
+            for layer, name in names.items()
+        }
+
+        if not set(self.layer_names).issubset(names):
+            raise ValueError(
+                "The layer list changed. Close and reopen the editor."
+            )
+
+        if set(names) != set(range(1, max(names) + 1)):
+            raise ValueError("Layer numbers must be consecutive, starting at 1.")
+
+        self.validate_layer_names(names)
+
+        previous = self.layer_names
+        self.layer_names = names
+
+        try:
+            self.save_layers()
+        except Exception:
+            self.layer_names = previous
+            raise
+
     def tag_opus_file(self, file_path, row):
         audio = OggOpus(file_path)
 
         audio["title"] = [row["title"]]
         audio["artist"] = [row["artist"]]
         if row["layer"]:
-            audio["album"] = [LAYER_NAMES[int(row["layer"])]]
+            audio["album"] = [self.layer_names[int(row["layer"])]]
         else:
             audio["album"] = ["Blank"]
         audio["genre"] = [row["genre"]]
         audio["comment"] = [row["video_url"]]
 
         audio.save()
+
+    def calculate_normalization_gain(self, file_path):
+        ffmpeg = Path(self.storage.ffmpeg_location())
+
+        if ffmpeg.is_dir():
+            ffmpeg = ffmpeg / ("ffmpeg.exe" if sys.platform == "win32" else "ffmpeg")
+
+        result = subprocess.run(
+            [
+                str(ffmpeg),
+                "-hide_banner",
+                "-nostdin",
+                "-nostats",
+                "-loglevel",
+                "info",
+                "-i",
+                str(file_path),
+                "-map",
+                "0:a:0",
+                "-vn",
+                "-sn",
+                "-dn",
+                "-af",
+                "loudnorm=I=-23:TP=-1:LRA=50:print_format=json",
+                "-f",
+                "null",
+                "-",
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            encoding="utf-8",
+            errors="replace",
+            timeout=300,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+
+        if ADB_REPORT_MODE:
+            print(result.stderr, flush=True)
+
+        if result.returncode != 0:
+            raise RuntimeError(f"FFmpeg loudness scan failed:\n{result.stderr[-1500:]}")
+
+        summaries = re.findall(
+            r'\{[^{}]*"input_i"[^{}]*\}',
+            result.stderr,
+        )
+
+        if not summaries:
+            raise RuntimeError("FFmpeg did not return a loudness measurement.")
+
+        measurements = json.loads(summaries[-1])
+        loudness = float(measurements["input_i"])
+        true_peak = float(measurements["input_tp"])
+
+        if not math.isfinite(loudness) or not math.isfinite(true_peak):
+            raise ValueError("No measurable loudness; the track may be silent.")
+
+        requested_gain = NORMALIZATION_TARGET_LUFS - loudness
+
+        limited_gain = min(
+            NORMALIZATION_MAX_GAIN_DB,
+            max(NORMALIZATION_MIN_GAIN_DB, requested_gain),
+        )
+
+        peak_limit = NORMALIZATION_PEAK_DBTP - true_peak - POWERAMP_GAIN_OFFSET_DB
+
+        if peak_limit < NORMALIZATION_MIN_GAIN_DB:
+            raise ValueError(
+                "Peak protection would exceed the allowed volume reduction."
+            )
+
+        gain = math.floor(min(limited_gain, peak_limit) * 256)
+
+        if not -32768 <= gain <= 32767:
+            raise ValueError("Calculated gain is outside the Opus tag range.")
+
+        if ADB_REPORT_MODE:
+            print(
+                f"Loudness: {loudness:.2f} LUFS; "
+                f"peak: {true_peak:.2f} dBTP; "
+                f"R128 gain: {gain / 256:+.2f} dB",
+                flush=True,
+            )
+
+        return gain
+
+    def write_normalization_tag(self, file_path, gain):
+        if type(gain) is not int or not -32768 <= gain <= 32767:
+            raise ValueError("Invalid Opus normalization gain.")
+
+        audio = OggOpus(file_path)
+        audio["R128_TRACK_GAIN"] = [str(gain)]
+        audio.save()
+
+    def normalize_files(self):
+        rows = self.read_csv()
+
+        if rows is None:
+            self.log("Normalization skipped: correct the CSV errors first.")
+            return
+
+        ready_rows = {
+            row["video_url"]: row
+            for row in rows
+            if row["downloaded"] == "YES"
+        }
+
+        files = sorted(self.storage.glob("*.opus"))
+
+        tagged = 0
+        skipped = 0
+        not_ready = 0
+        failed = 0
+
+        self.major("Analyzing loudness...")
+        self.progress(0, 1)
+
+        try:
+            for current, file in enumerate(files, start=1):
+                try:
+                    audio = OggOpus(file)
+
+                    row = ready_rows.get(
+                        audio.get("comment", [""])[0]
+                    )
+
+                    if row is None:
+                        not_ready += 1
+                        continue
+
+                    expected = {
+                        "title": row["title"],
+                        "artist": row["artist"],
+                        "album": (
+                            self.layer_names[int(row["layer"])]
+                            if row["layer"]
+                            else "Blank"
+                        ),
+                        "genre": row["genre"],
+                        "comment": row["video_url"],
+                    }
+
+                    if any(
+                        key not in audio or audio[key] != [value]
+                        for key, value in expected.items()
+                    ):
+                        not_ready += 1
+                        continue
+
+                    values = audio.get("R128_TRACK_GAIN", [])
+
+                    if (
+                        len(values) == 1
+                        and len(values[0]) <= 6
+                        and re.fullmatch(r"[+-]?[0-9]+", values[0])
+                        and -32768 <= int(values[0]) <= 32767
+                    ):
+                        skipped += 1
+                        continue
+
+                    self.log(f"Analyzing: {file.stem}")
+
+                    gain = self.calculate_normalization_gain(file)
+                    self.write_normalization_tag(file, gain)
+
+                    tagged += 1
+
+                except Exception as exc:
+                    failed += 1
+
+                    if ADB_REPORT_MODE:
+                        traceback.print_exc()
+
+                    self.log(
+                        f"Normalization failed:\n"
+                        f"    {file.name}\n"
+                        f"    {exc}"
+                    )
+
+                finally:
+                    self.progress(current, len(files))
+
+        finally:
+            self.progress(0, 1)
+
+        self.report("Normalization Complete")
+        self.log(f"Tagged: {tagged}")
+        self.log(f"Already tagged: {skipped}")
+        self.log(f"Skipped (download/metadata incomplete): {not_ready}")
+        self.log(f"Failed: {failed}")
 
     def download_track(self, row):
 
@@ -551,10 +976,10 @@ class LibraryMachine:
             "ffmpeg_location": self.storage.ffmpeg_location(),
             "outtmpl": str(self.storage.file(f"{filename}.%(ext)s")),
             "logger": logger,
+            "verbose": ADB_REPORT_MODE,
+            "quiet": not ADB_REPORT_MODE,
             "writethumbnail": True,
-            "js_runtimes": {
-                "node": {},
-            },
+            "js_runtimes": self.js_runtimes,
             "postprocessors": [
                 {
                     "key": "FFmpegExtractAudio",
@@ -675,47 +1100,54 @@ class LibraryMachine:
         self.progress(0, 1)
 
     def build_playlists(self):
-
         rows = self.read_csv()
 
         if rows is None:
             return
 
-        playlists = {
-            1: self.storage.open_path(
-                self.storage.file("Dollop.m3u8"),
-                "w",
-                encoding="utf-8"
-            ),
-            2: self.storage.open_path(
-                self.storage.file("Peer.m3u8"), 
-                "w", 
-                encoding="utf-8"
-            ),
-            3: self.storage.open_path(
-                self.storage.file("PeerJ.m3u8"), 
-                "w", 
-                encoding="utf-8"
-            ),
-            4: self.storage.open_path(
-                self.storage.file("For Dakota_ig.m3u8"), 
-                "w", 
-                encoding="utf-8"
-            ),
+        names = dict(self.layer_names)
+        self.validate_layer_names(names)
+
+        filenames = {
+            layer: self.layer_playlist_filename(layer, name)
+            for layer, name in sorted(names.items())
         }
 
-        try:
+        previous_files = set(self.layer_playlist_files)
+
+        for filename in filenames.values():
+            path = self.storage.file(filename)
+
+            if path.exists() and filename not in previous_files:
+                same_managed_file = any(
+                    self.storage.file(old).exists()
+                    and path.samefile(self.storage.file(old))
+                    for old in previous_files
+                )
+
+                if not same_managed_file:
+                    raise ValueError(
+                        "Playlist already exists and is not managed "
+                        f"by the app: {filename}"
+                    )
+
+        with ExitStack() as stack:
+            playlists = {
+                layer: stack.enter_context(
+                    self.storage.open_path(
+                        self.storage.file(filename + ".tmp"),
+                        "w",
+                        encoding="utf-8",
+                    )
+                )
+                for layer, filename in filenames.items()
+            }
 
             for playlist in playlists.values():
-                playlist.write("#EXTM3U\n")
-                playlist.write("#EXTENC:UTF-8\n")
+                playlist.write("#EXTM3U\n#EXTENC:UTF-8\n")
 
             for row in rows:
-
-                if row["downloaded"] != "YES":
-                    continue
-
-                if not row["layer"]:
+                if row["downloaded"] != "YES" or not row["layer"]:
                     continue
 
                 filename = (
@@ -725,17 +1157,34 @@ class LibraryMachine:
                     + ".opus"
                 )
 
-                layer = int(row["layer"])
-
-                for playlist_layer, playlist in playlists.items():
-
-                    if layer <= playlist_layer:
+                for layer, playlist in playlists.items():
+                    if int(row["layer"]) <= layer:
                         playlist.write(filename + "\n")
 
-        finally:
+        # Retain both sets so an interrupted rebuild can retry.
+        self.layer_playlist_files = sorted(
+            previous_files | set(filenames.values())
+        )
+        self.save_layers()
 
-            for playlist in playlists.values():
-                playlist.close()
+        for filename in filenames.values():
+            self.storage.file(filename + ".tmp").replace(
+                self.storage.file(filename)
+            )
+
+        current_files = set(filenames.values())
+
+        for filename in previous_files - current_files:
+            path = self.storage.file(filename)
+
+            if path.exists() and not any(
+                path.samefile(self.storage.file(current))
+                for current in current_files
+            ):
+                self.storage.unlink(path)
+
+        self.layer_playlist_files = list(filenames.values())
+        self.save_layers()
 
         self.blank()
         self.log("Playlists updated.")
@@ -854,14 +1303,16 @@ class LibraryMachine:
 
                     audio = OggOpus(file)
 
+                    expected_album = (
+                        self.layer_names[int(row["layer"])]
+                        if row["layer"]
+                        else "Blank"
+                    )
+
                     needs_tag = (
                         audio.get("title", [""])[0] != row["title"]
                         or audio.get("artist", [""])[0] != row["artist"]
-                        or (
-                            row["layer"]
-                            and audio.get("album", [""])[0]
-                            != LAYER_NAMES[int(row["layer"])]
-                        )
+                        or audio.get("album", [""])[0] != expected_album
                         or audio.get("genre", [""])[0] != row["genre"]
                         or audio.get("comment", [""])[0] != row["video_url"]
                     )
@@ -998,6 +1449,8 @@ class LibraryMachine:
         if not printed:
             self.log("No changes.")
 
+        self.normalize_files()
+
         self.blank()
         self.log("Finished.")
 
@@ -1062,14 +1515,13 @@ class LibraryMachine:
             return {"status": "error"}
 
     def finish_playlist_processing(self):
-
         rows = self.read_csv()
 
         if rows is None:
             return False
 
         self.download_pending(rows)
-
         self.build_playlists()
+        self.normalize_files()
 
         return True

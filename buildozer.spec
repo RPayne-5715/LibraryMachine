@@ -27,7 +27,7 @@ source.include_patterns = assets/*
 #source.exclude_exts = spec,gitignore
 
 # (list) List of directory to exclude (leave empty to not exclude anything)
-#source.exclude_dirs = tests, bin, venv, git
+source.exclude_dirs = recipes,node
 
 # (list) List of exclusions using pattern matching
 # Do not prefix with './'
@@ -42,7 +42,7 @@ version.filename = %(source.dir)s/main.py
 
 # (list) Application requirements
 # comma separated e.g. requirements = sqlite3,kivy
-requirements = python3,kivy,yt-dlp==2026.10.26,yt-dlp-ejs==0.8.0,mutagen,nodejs-wheel-binaries,certifi==2026.10.23
+requirements = python3==3.14.2,kivy==2.3.1,yt-dlp==2026.10.26,yt-dlp-ejs==0.8.0,mutagen==1.48.1,nodejs,certifi==2026.10.23,charset-normalizer==2.1.1,pyjnius==1.7.0,setuptools==84.2.1
 
 # (str) Custom source folders for requirements
 # Sets custom source for any requirements with recipes
@@ -109,19 +109,19 @@ android.permissions = INTERNET,MANAGE_EXTERNAL_STORAGE
 #android.features = android.hardware.usb.host
 
 # (int) Target Android API, should be as high as possible.
-#android.api = 33
+android.api = 33
 
 # (int) Minimum API your APK / AAB will support.
-#android.minapi = 24
+android.minapi = 24
 
 # (int) Android SDK version to use
 #android.sdk = 20
 
 # (str) Android NDK version to use
-#android.ndk = 23b
+android.ndk = 28c
 
 # (int) Android NDK API to use. This is the minimum API your app will support, it should usually match android.minapi.
-#android.ndk_api = 21
+android.ndk_api = 24
 
 # (str) Android NDK directory (if empty, it will be automatically downloaded.)
 #android.ndk_path =
@@ -135,7 +135,7 @@ android.permissions = INTERNET,MANAGE_EXTERNAL_STORAGE
 # (bool) If True, then skip trying to update the Android SDK
 # This can be useful to avoid excess Internet downloads or save time
 # when an update is due and you just want to test/build your package
-# android.skip_update = False
+android.skip_update = True
 
 # (bool) If True, then automatically accept SDK license
 # agreements. This is intended for automation only. If set to False,
@@ -259,7 +259,7 @@ android.permissions = INTERNET,MANAGE_EXTERNAL_STORAGE
 # (list) Android additional libraries to copy into libs/armeabi
 #android.add_libs_armeabi = libs/android/*.so
 #android.add_libs_armeabi_v7a = libs/android-v7/*.so
-#android.add_libs_arm64_v8a = libs/android-v8/*.so
+android.add_libs_arm64_v8a = ffmpeg/android/libffmpeg.so,ffmpeg/android/libffprobe.so
 #android.add_libs_x86 = libs/android-x86/*.so
 #android.add_libs_mips = libs/android-mips/*.so
 
@@ -335,16 +335,16 @@ android.allow_backup = True
 #p4a.fork = kivy
 
 # (str) python-for-android branch to use, defaults to master
-#p4a.branch = master
+p4a.branch = master
 
 # (str) python-for-android specific commit to use, defaults to HEAD, must be within p4a.branch
-#p4a.commit = HEAD
+p4a.commit = 58d21141f17c889bf8585f5665921d72028f8831
 
 # (str) python-for-android git clone directory
 #p4a.source_dir =
 
 # (str) The directory in which python-for-android should look for your own build recipes (if any)
-#p4a.local_recipes =
+p4a.local_recipes = ./recipes
 
 # (str) Filename to the hook for p4a
 #p4a.hook =

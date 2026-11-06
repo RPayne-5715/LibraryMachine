@@ -1,11 +1,14 @@
 import os
 import json
 import subprocess
-import nodejs_wheel.executable
+from kivy.utils import platform
+
+if platform != "android":
+    import nodejs_wheel.executable
 
 
 RUNNER_PATH = os.path.join(os.path.dirname(__file__), "vm", "runner.js")
-NODE_DIR = nodejs_wheel.executable.ROOT_DIR
+NODE_DIR = nodejs_wheel.executable.ROOT_DIR if platform != "android" else None
 
 
 class NodeRunnerError(Exception):
@@ -44,9 +47,13 @@ class NodeRunner:
 
     @staticmethod
     def _node_path() -> str:
+        if platform == "android":
+            from android_node import configure
+            return configure()["node"]["path"]
+
         suffix = ".exe" if os.name == "nt" else ""
         bin_dir = NODE_DIR if os.name == "nt" else os.path.join(NODE_DIR, "bin")
-        return os.path.join(bin_dir, 'node' + suffix)
+        return os.path.join(bin_dir, "node" + suffix)
 
     @staticmethod
     def _exposed(code: str, fun_name: str) -> str:

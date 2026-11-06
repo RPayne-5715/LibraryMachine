@@ -1,0 +1,17 @@
+appdirs==1.4.4
+build==1.5.1
+./build-tools/buildozer-working-source.tar.gz
+colorama==0.4.6
+Cython==0.29.37
+Jinja2==3.1.6
+MarkupSafe==3.0.3
+meson==1.11.2
+ninja==1.13.0
+packaging==26.2
+pexpect==4.9.0
+ptyprocess==0.7.0
+pyproject_hooks==1.2.0
+setuptools==83.0.0
+sh==2.3.0
+toml==0.10.2
+wheel==0.43.0

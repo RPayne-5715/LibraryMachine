@@ -29,6 +29,12 @@ sh              2.3.0
 toml            0.10.2
 wheel           0.43.0
 
+-------------------
+yt-dlp          2026.10.26
+yt-dlp-ejs      0.8.0
+certifi         2026.10.23
+mutagen         1.48.1
+
 OpenJDK version "17.0.18" 2026-01-20, build 17.0.18+8-Ubuntu-1, mixed mode, sharing
 
 Android NDK 28.2.13676358, r28c

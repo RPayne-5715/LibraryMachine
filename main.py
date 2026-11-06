@@ -4,17 +4,27 @@ from kivy.clock import Clock
 from kivy.core.image import Image as CoreImage
 from kivy.core.text import LabelBase
 from kivy.core.window import Window
+from kivy.factory import Factory
+from kivy.metrics import dp
+from kivy.properties import BooleanProperty
 from kivy.properties import NumericProperty, StringProperty, BooleanProperty
 from kivy.storage.jsonstore import JsonStore
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.label import Label
+from kivy.uix.popup import Popup
+from kivy.uix.scrollview import ScrollView
+from kivy.uix.textinput import TextInput
+from kivy.uix.modalview import ModalView
 from kivy.uix.screenmanager import ScreenManager, FadeTransition, Screen
 from kivy.uix.widget import Widget
 from kivy.utils import platform
 from kivy.core.clipboard import Clipboard
 
+import backend
 from backend import LibraryMachine, PathStorage
 from pathlib import Path
 from datetime import datetime
-from threading import Thread
+from threading import Thread, enumerate as enumerate_threads
 import traceback
 
 # CHANGE LOCATIONS
@@ -26,7 +36,7 @@ LIBRARY_PATH = (
 
 FOLDER_REQUEST = 2001
 
-__version__ = "1.0"
+__version__ = "1.7"
 
 if platform == "android":
     from jnius import autoclass
@@ -107,8 +117,16 @@ class ProgressBarWidget(Widget):
     def on_size(self, *_):
         self.fill_width = self.width * self.progress_amt
 
+class LayerNameRow(BoxLayout):
+    layer_number = NumericProperty(0)
+    layer_name = StringProperty("")
+
+class LayerNamesPopup(ModalView):
+    pass
+
 class LibraryMachineApp(App):
     gradient = gradient
+    adb_report_mode = BooleanProperty(backend.ADB_REPORT_MODE)
 
     def build(self):
         self.machine = None
@@ -127,6 +145,7 @@ class LibraryMachineApp(App):
             library_path=library_path,
             log_callback=log,
             progress_callback=self.update_progress,
+            layer_settings_path=Path(self.user_data_dir) / "layers.json",
         )
 
     def initialize_library(self):
@@ -313,6 +332,7 @@ class LibraryMachineApp(App):
                     True,
                     False,
                 ),
+                name="library-task",
                 daemon=True,
             ).start()
 
@@ -329,6 +349,7 @@ class LibraryMachineApp(App):
                     False,
                     False,
                 ),
+                name="library-task",
                 daemon=True,
             ).start()
 
@@ -344,6 +365,7 @@ class LibraryMachineApp(App):
 
             Thread(
                 target=self.analyze_playlist_thread,
+                name="library-task",
                 daemon=True,
             ).start()
 
@@ -355,6 +377,7 @@ class LibraryMachineApp(App):
 
             Thread(
                 target=self.finish_playlist_thread,
+                name="library-task",
                 daemon=True,
             ).start()
 
@@ -363,8 +386,6 @@ class LibraryMachineApp(App):
     def abort_pressed(self):
         # Cancellation will be implemented here.
         pass
-
-        
 
     #
 
@@ -438,6 +459,7 @@ class LibraryMachineApp(App):
 
         Thread(
             target=self.sync_csv_thread,
+            name="library-task",
             daemon=True,
         ).start()
 
@@ -475,8 +497,84 @@ class LibraryMachineApp(App):
 
         Thread(
             target=self.analyze_playlist_thread,
+            name="library-task",
             daemon=True,
         ).start()
+
+    def toggle_adb_reporting(self):
+        self.adb_report_mode = not self.adb_report_mode
+        backend.ADB_REPORT_MODE = self.adb_report_mode
+
+        self.machine.log("")
+        if self.adb_report_mode:
+            self.machine.log("Verbose reporting enabled.")
+            self.machine.log("Use ADB to view diagnostic output.")
+            self.machine.log("See GitHub for details.")
+        else:
+            self.machine.log("Verbose reporting disabled.")
+
+    def edit_layers_pressed(self):
+        if self.machine is None:
+            return
+
+        if any(thread.name == "library-task" for thread in enumerate_threads()):
+            self.machine.log(
+                "Wait for the current operation to finish " "before editing layers."
+            )
+            return
+
+        popup = LayerNamesPopup()
+
+        for layer, name in sorted(self.machine.layer_names.items()):
+            popup.ids.layer_fields.add_widget(
+                LayerNameRow(
+                    layer_number=layer,
+                    layer_name=name,
+                )
+            )
+
+        popup.open()
+
+    def add_layer_row(self, popup):
+        fields = popup.ids.layer_fields
+
+        next_layer = (
+            max(
+                (int(row.layer_number) for row in fields.children),
+                default=0,
+            )
+            + 1
+        )
+
+        fields.add_widget(
+            LayerNameRow(
+                layer_number=next_layer,
+                layer_name=f"Layer {next_layer}",
+            )
+        )
+
+        popup.ids.error_message.text = ""
+
+        Clock.schedule_once(
+            lambda dt: setattr(popup.ids.layer_scroll, "scroll_y", 0),
+            0,
+        )
+
+    def save_layer_names(self, popup):
+        names = {
+            int(row.layer_number): row.ids.name_input.text
+            for row in popup.ids.layer_fields.children
+        }
+
+        try:
+            self.machine.rename_layers(names)
+        except (ValueError, OSError) as exc:
+            popup.ids.error_message.text = str(exc)
+            return
+
+        popup.dismiss()
+        self.machine.log("")
+        self.machine.log("Layer names saved. Sync CSV to update tags and playlists.")
 
     #
 

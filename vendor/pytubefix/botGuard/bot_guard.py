@@ -1,16 +1,28 @@
 import os
 import subprocess
 import sys
-import nodejs_wheel.executable
+from kivy.utils import platform
 
 PLATFORM = sys.platform
 
-NODE_DIR = nodejs_wheel.executable.ROOT_DIR
+if platform != "android":
+    import nodejs_wheel.executable
+
+    NODE_DIR = nodejs_wheel.executable.ROOT_DIR
+else:
+    NODE_DIR = None
+
 
 def _node_path() -> str:
+    if platform == "android":
+        from android_node import configure
+
+        return configure()["node"]["path"]
+
     suffix = ".exe" if os.name == "nt" else ""
     bin_dir = NODE_DIR if os.name == "nt" else os.path.join(NODE_DIR, "bin")
-    return os.path.join(bin_dir, 'node' + suffix)
+    return os.path.join(bin_dir, "node" + suffix)
+
 
 NODE_PATH = _node_path()
 VM_PATH = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'vm/botGuard.js')
