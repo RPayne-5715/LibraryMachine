@@ -36,7 +36,7 @@ LIBRARY_PATH = (
 
 FOLDER_REQUEST = 2001
 
-__version__ = "1.7"
+__version__ = "2.0"
 
 if platform == "android":
     from jnius import autoclass

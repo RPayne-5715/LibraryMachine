@@ -27,7 +27,7 @@ source.include_patterns = assets/*
 #source.exclude_exts = spec,gitignore
 
 # (list) List of directory to exclude (leave empty to not exclude anything)
-source.exclude_dirs = recipes,node
+source.exclude_dirs = recipes,node,releases
 
 # (list) List of exclusions using pattern matching
 # Do not prefix with './'
